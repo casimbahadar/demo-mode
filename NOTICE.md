@@ -17,3 +17,7 @@ SHA-256 of the files as shipped:
 The bot's game-memory addresses come from the fireemblem8u decompilation
 (https://github.com/FireEmblemUniverse/fireemblem8u) and StanHash's FE-CLib symbol list
 (https://github.com/StanHash/FE-CLib). No game data is included. No ROMs are hosted here.
+
+The pixel typeface in `index.html` is Silkscreen by Jason Kottke (latin subset, weights 400 and 700,
+from `@fontsource/silkscreen` 5.3.0), embedded as base64. It is under the SIL Open Font License 1.1:
+`LICENSE-silkscreen-ofl.txt`. Source: https://github.com/googlefonts/silkscreen
