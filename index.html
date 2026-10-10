@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Demo Mode">
+<meta name="theme-color" content="#14191d">
+<title>Demo Mode</title>
+<style>
+:root {
+  --bg: #14191d; --panel: #1f272d; --line: #33404a; --text: #eef2f4; --muted: #a7b3bb;
+  --accent: #f2b544; --accent-ink: #1b1406; --danger: #e46a52;
+  --win: #22397a; --win-edge: #b9c8ee; --win-text: #f4f6fb;
+  --gutter: 16px; --r-sm: 6px; --r-md: 10px; --btn-h: 48px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+body { min-height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+h1 { font-size: 30px; line-height: 1.15; margin: 0; font-weight: 800; letter-spacing: -0.01em; }
+h2 { font-size: 19px; margin: 0; font-weight: 700; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+button { font: inherit; font-weight: 650; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--r-sm); min-height: var(--btn-h); padding: 0 12px; cursor: pointer; flex: 1; touch-action: manipulation; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.quiet { background: transparent; }
+button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+button:disabled { opacity: 0.45; }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; gap: 8px; }
+.view { padding: 24px var(--gutter) 32px; max-width: 720px; margin: 0 auto; }
+[hidden] { display: none !important; }
+
+/* Library */
+#library header { display: grid; gap: 8px; margin-bottom: 24px; }
+#romList { display: grid; gap: 12px; margin-top: 24px; }
+#addNote:empty { display: none; }
+#addNote { margin-top: 12px; color: var(--danger); }
+.rom { background: var(--panel); border-radius: var(--r-md); padding: 16px; display: grid; gap: 12px; }
+.rom .file { font-size: 14px; color: var(--muted); word-break: break-all; }
+.empty { color: var(--muted); padding: 16px 0; }
+#addRom { width: 100%; }
+
+/* Watch */
+#watch { padding: 0; max-width: none; }
+.stage { position: relative; background: #000; }
+#screen { display: block; width: 100%; aspect-ratio: 3 / 2; image-rendering: pixelated; image-rendering: crisp-edges; }
+.overlay { position: absolute; inset: 0; display: grid; place-content: center; gap: 12px; text-align: center;
+  background: rgba(10, 13, 16, 0.86); padding: var(--gutter); }
+.overlay button { min-width: 180px; }
+.side { padding: 12px var(--gutter) 24px; display: grid; gap: 12px; align-content: start; }
+/* The status line is drawn like a GBA Fire Emblem text window. */
+.status { background: var(--win); color: var(--win-text); border: 2px solid var(--win-edge); border-radius: var(--r-md);
+  padding: 10px 14px; min-height: 68px; box-shadow: inset 0 0 0 2px #142451; }
+.status .where { font-size: 14px; opacity: 0.85; }
+.status .what { font-size: 17px; font-weight: 600; }
+.seg { display: flex; gap: 0; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.seg button { border: 0; border-radius: 0; border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
+.label { font-size: 14px; color: var(--muted); }
+#pauseBtn { flex: 2; }
+@media (orientation: landscape) and (min-width: 640px) {
+  #watch { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 100dvh; }
+  .stage { display: grid; align-content: center; }
+  #screen { max-height: 100dvh; width: auto; height: 100%; margin: 0 auto; }
+  .side { padding-top: 16px; overflow-y: auto; max-height: 100dvh; }
+}
+</style>
+</head>
+<body>
+
+<main id="library" class="view">
+  <header>
+    <h1>Demo Mode</h1>
+    <p class="muted">Pick a ROM on this phone and watch a bot play it. The file stays in this browser and is never uploaded.</p>
+  </header>
+  <button id="addRom" class="primary" type="button">Add a ROM from this phone</button>
+  <!-- No accept filter: iOS greys out file types it does not know, and .gba is one of them.
+       The file is checked after picking instead. -->
+  <input id="romFile" type="file" hidden>
+  <p id="addNote" class="muted" role="alert"></p>
+  <section id="romList" aria-label="Saved ROMs"></section>
+</main>
+
+<main id="watch" class="view" hidden>
+  <div class="stage">
+    <canvas id="screen" width="240" height="160" aria-label="Game screen"></canvas>
+    <div id="hiddenNote" class="overlay" hidden>
+      <h2>Paused</h2>
+      <p class="muted">Safari stopped the page while it was in the background.</p>
+      <button id="resumeHidden" class="primary" type="button">Resume watching</button>
+    </div>
+    <div id="loadingNote" class="overlay">
+      <h2>Starting the emulator</h2>
+      <p class="muted" id="loadingText">Loading the core</p>
+    </div>
+  </div>
+  <div class="side">
+    <div class="status" role="status" aria-live="polite">
+      <p class="where" id="statusWhere">Loading</p>
+      <p class="what" id="statusWhat">Starting</p>
+    </div>
+    <div class="row">
+      <button id="pauseBtn" class="primary" type="button">Pause</button>
+      <button id="rewindBtn" type="button" disabled>Rewind</button>
+    </div>
+    <p class="label" id="speedLabel">Speed</p>
+    <div class="seg" role="group" aria-labelledby="speedLabel" id="speeds">
+      <button type="button" data-speed="1">1x</button>
+      <button type="button" data-speed="2">2x</button>
+      <button type="button" data-speed="4" aria-pressed="true">4x</button>
+      <button type="button" data-speed="8">8x</button>
+    </div>
+    <div class="row">
+      <button id="soundBtn" type="button" aria-pressed="false">Sound</button>
+      <button id="saverBtn" type="button" aria-pressed="false">Saver</button>
+      <button id="botBtn" type="button" aria-pressed="true">Bot</button>
+    </div>
+    <p class="label" id="hint">Sound plays at 1x only. Saver keeps speed at 2x or less to save battery and heat.</p>
+    <button id="backBtn" class="quiet" type="button">Save and go back</button>
+  </div>
+</main>
+
+<script src="core.js"></script>
+<script src="bot-fe.js"></script>
+<script src="mgba_libretro.js"></script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const APP = { bot: null, romId: null, rewind: [], speedWanted: 4, saver: false };
+window.APP = APP;
+
+function gameInfo(bytes) {
+  const txt = (o, n) => String.fromCharCode(...bytes.subarray(o, o + n)).replace(/\0.*$/, "").trim();
+  const code = txt(0xAC, 4), title = txt(0xA0, 12);
+  const known = { BE8E: "Fire Emblem: The Sacred Stones (US)", AE7E: "Fire Emblem (US, FE7)", AFEJ: "Fire Emblem: The Binding Blade (JP)" };
+  return { code, title, name: known[code] || (title || "Unknown game") };
+}
+async function romId(bytes) {
+  if (crypto.subtle) {
+    const h = new Uint8Array(await crypto.subtle.digest("SHA-1", bytes));
+    return [...h].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return "size-" + bytes.length;
+}
+
+// ---- Library -----------------------------------------------------------------------
+async function renderLibrary() {
+  const metas = (await WS.store.all("runs")).filter((r) => r.id.startsWith("meta:"));
+  const runs = new Set((await WS.store.all("runs")).filter((r) => r.id.startsWith("run:")).map((r) => r.id.slice(4)));
+  const list = $("romList"); list.textContent = "";
+  if (!metas.length) { list.innerHTML = '<p class="empty">No ROMs yet. Add one to start.</p>'; return; }
+  for (const m of metas.sort((a, b) => (b.used || 0) - (a.used || 0))) {
+    const id = m.id.slice(5), hasRun = runs.has(id);
+    const el = document.createElement("article"); el.className = "rom";
+    el.innerHTML = `<div><h2></h2><p class="file"></p></div><div class="row"></div>`;
+    el.querySelector("h2").textContent = m.name;
+    el.querySelector(".file").textContent = m.file + (hasRun ? " (a run is saved)" : "");
+    const row = el.querySelector(".row");
+    const add = (label, cls, fn) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; if (cls) b.className = cls; b.onclick = fn; row.appendChild(b); };
+    add(hasRun ? "Continue" : "Watch", "primary", () => startWatch(id, hasRun));
+    if (hasRun) add("New run", "", () => startWatch(id, false));
+    add("Remove", "quiet", async () => {
+      if (!confirm(`Remove ${m.name} from this phone?`)) return;
+      await WS.store.del("roms", id); await WS.store.del("runs", "meta:" + id); await WS.store.del("runs", "run:" + id);
+      renderLibrary();
+    });
+    list.appendChild(el);
+  }
+}
+$("addRom").onclick = () => $("romFile").click();
+$("romFile").onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  e.target.value = "";
+  // Every GBA ROM has the fixed value 0x96 at offset 0xB2 of its header.
+  if (bytes.length < 0xC0 || bytes[0xB2] !== 0x96) {
+    $("addNote").textContent = `${f.name} is not a GBA ROM, so it was not added.`;
+    return;
+  }
+  $("addNote").textContent = "";
+  const id = await romId(bytes), info = gameInfo(bytes);
+  await WS.store.put("roms", { id, bytes });
+  await WS.store.put("runs", { id: "meta:" + id, name: info.name, code: info.code, file: f.name, used: Date.now() });
+  renderLibrary();
+};
+
+// ---- Watching -----------------------------------------------------------------------
+// The emulator core can only start once per page load, so after the first game the
+// page reloads itself before starting another.
+async function startWatch(id, resume) {
+  if (WS.started) { sessionStorage.setItem("ws-start", JSON.stringify({ id, resume })); location.reload(); return; }
+  APP.romId = id;
+  const rec = await WS.store.get("roms", id), meta = await WS.store.get("runs", "meta:" + id);
+  meta.used = Date.now(); await WS.store.put("runs", meta);
+  $("library").hidden = true; $("watch").hidden = false;
+  WS.keepAwake(true);
+  const info = gameInfo(rec.bytes);
+  await WS.boot(rec.bytes, $("screen"), $("watch"));
+  if (FEBot.supports(info.code)) {
+    APP.bot = new FEBot(WS, info.code);
+    APP.bot.onAction = () => snapshot();
+  } else {
+    APP.bot = null;
+    $("botBtn").disabled = true;
+    $("statusWhat").textContent = "No bot for this game yet. The emulator runs, nothing presses buttons.";
+  }
+  WS.onFrame = () => { if (APP.bot) APP.bot.step(); };
+  if (resume) {
+    const run = await WS.store.get("runs", "run:" + id);
+    if (run) {
+      // let the core settle for a few frames, then restore the saved run
+      const t0 = WS.frame; await new Promise((r) => { const iv = setInterval(() => { if (WS.frame - t0 > 20) { clearInterval(iv); r(); } }, 50); });
+      WS.loadState(run.state); if (APP.bot) APP.bot.reset();
+    }
+  }
+  $("loadingNote").hidden = true;
+  setSpeed(APP.speedWanted);
+}
+
+function snapshot() {
+  if (!WS.started) return;
+  const st = WS.saveState();
+  APP.rewind.push(st); if (APP.rewind.length > 30) APP.rewind.shift();
+  $("rewindBtn").disabled = APP.rewind.length < 2;
+  APP.lastSnap = Date.now();
+}
+async function saveRun() {
+  if (!WS.started || !APP.romId) return;
+  await WS.store.put("runs", { id: "run:" + APP.romId, state: WS.saveState(), saved: Date.now() });
+}
+// Save the run now and then, and whenever Safari hides the page.
+setInterval(() => { if (WS.started && !WS.paused) saveRun(); }, 60000);
+document.addEventListener("visibilitychange", () => { if (document.hidden) saveRun(); });
+
+function setSpeed(s) {
+  APP.speedWanted = s;
+  const eff = APP.saver ? Math.min(2, s) : s;
+  WS.speed = eff;
+  for (const b of $("speeds").children) b.setAttribute("aria-pressed", String(+b.dataset.speed === eff));
+  WS.applySound();
+}
+for (const b of $("speeds").children) b.onclick = () => setSpeed(+b.dataset.speed);
+$("pauseBtn").onclick = () => {
+  WS.paused = !WS.paused; if (WS.paused) WS.releaseAll();
+  $("pauseBtn").textContent = WS.paused ? "Play" : "Pause";
+  WS.applySound();
+};
+$("rewindBtn").onclick = () => {
+  if (APP.rewind.length < 2) return;
+  APP.rewind.pop();
+  WS.loadState(APP.rewind[APP.rewind.length - 1]);
+  if (APP.bot) { APP.bot.reset(); APP.bot.say("Rewound one action"); }
+  $("rewindBtn").disabled = APP.rewind.length < 2;
+};
+$("soundBtn").onclick = () => {
+  WS.soundWanted = !WS.soundWanted; $("soundBtn").setAttribute("aria-pressed", String(WS.soundWanted));
+  if (WS.soundWanted && WS.speed !== 1) setSpeed(1); else WS.applySound();
+};
+$("saverBtn").onclick = () => { APP.saver = !APP.saver; $("saverBtn").setAttribute("aria-pressed", String(APP.saver)); setSpeed(APP.speedWanted); };
+$("botBtn").onclick = () => {
+  if (!APP.bot) return;
+  APP.bot.enabled = !APP.bot.enabled; WS.releaseAll(); if (APP.bot.enabled) APP.bot.reset();
+  $("botBtn").setAttribute("aria-pressed", String(APP.bot.enabled));
+};
+$("backBtn").onclick = async () => { await saveRun(); WS.keepAwake(false); location.reload(); };
+$("resumeHidden").onclick = () => { WS.hiddenPause = false; $("hiddenNote").hidden = true; WS.keepAwake(true); WS.applySound(); };
+
+WS.onTick = () => {
+  if (WS.hiddenPause && !document.hidden) $("hiddenNote").hidden = false;
+  const bot = APP.bot;
+  if (!bot || !WS.memReady()) return;
+  const ph = { 0: "Player phase", 0x40: "Other army's phase", 0x80: "Enemy phase" }[bot.phase()] || "";
+  const ch = bot.chapter();
+  $("statusWhere").textContent = WS.paused ? "Paused" : (["free", "moveSelect", "enemyPhase", "battle", "busy", "menu", "target"].includes(bot.sceneKind) && ch < 0x38 && bot.turn() > 0
+    ? `${ch === 0 ? "Prologue" : "Chapter " + ch}, turn ${bot.turn()}, ${ph.toLowerCase()}` : "Outside battle");
+  $("statusWhat").textContent = bot.enabled ? bot.status : "Bot is off";
+};
+
+(async () => {
+  await renderLibrary();
+  const pending = sessionStorage.getItem("ws-start");
+  if (pending) { sessionStorage.removeItem("ws-start"); const p = JSON.parse(pending); startWatch(p.id, p.resume); }
+})();
+</script>
+</body>
+</html>
