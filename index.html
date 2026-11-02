@@ -67,6 +67,9 @@ button:focus-visible { outline: 3px solid var(--led); outline-offset: 2px; }
 #addNote { margin-top: 12px; color: var(--danger); }
 #addNote:empty { display: none; }
 .privacy { margin-top: 32px; color: var(--ink-2); font-size: 15px; }
+.version { margin-top: 8px; font: 400 14px/1.2 var(--pixel); color: var(--ink-2); }
+.sheet .switches { margin-top: 16px; max-height: 50dvh; overflow-y: auto; }
+.textarea { min-height: 200px; padding: 12px; font: 14px/1.4 ui-monospace, Menlo, monospace; resize: vertical; margin-top: 16px; }
 
 /* ---------- Watch ---------- */
 #watch { min-height: 100dvh; }
@@ -77,7 +80,7 @@ button:focus-visible { outline: 3px solid var(--led); outline-offset: 2px; }
 .overlay h2 { font: 700 20px/1.2 var(--pixel); }
 .overlay p { color: var(--ink-2); }
 .overlay .btn { min-width: 200px; }
-.deck { padding: 12px var(--gutter) 24px; display: grid; gap: 16px; max-width: 640px; margin: 0 auto; }
+.deck { padding: 12px var(--gutter) 24px; display: grid; gap: 16px; align-content: start; max-width: 640px; margin: 0 auto; }
 /* The bot's commentary, drawn like a GBA Fire Emblem text window. */
 .status { background: var(--win); color: var(--win-ink); border: 2px solid var(--win-edge); border-radius: var(--r-2);
   box-shadow: inset 0 0 0 2px #142451; padding: 12px 16px; min-height: 76px; }
@@ -101,9 +104,32 @@ button:focus-visible { outline: 3px solid var(--led); outline-offset: 2px; }
 .switch-text b { font-weight: 650; }
 .switch-text small { font-size: 14px; color: var(--ink-2); }
 .state { font: 700 14px/1 var(--pixel); padding: 8px; border-radius: var(--r-1); border: 1px solid var(--seam); color: var(--ink-2); min-width: 44px; text-align: center; }
-.switch[aria-checked="true"] .state { color: var(--key-ink); background: var(--led); border-color: var(--led); }
+.switch[aria-checked="true"] .state, .switch[aria-pressed="true"] .state { color: var(--key-ink); background: var(--led); border-color: var(--led); }
 .switch:disabled { opacity: 0.4; }
 #backBtn { width: 100%; }
+
+/* Sleep timer sheet and toast, following Clip & Play's pattern. */
+.field { width: 100%; min-height: var(--btn-h); border-radius: var(--r-2); border: 1px solid var(--seam); background: var(--body);
+  color: var(--ink); font: 400 16px var(--sans); padding: 0 12px; }
+.btn.danger { background: transparent; color: var(--danger); border-color: currentColor; }
+dialog { border: 0; padding: 0; background: transparent; width: 100%; max-width: none; max-height: 100dvh; margin: auto auto 0; color: var(--ink); }
+dialog::backdrop { background: rgba(8, 9, 10, 0.72); }
+.sheet { background: var(--shell); border: 1px solid var(--seam); border-bottom: 0; border-radius: 12px 12px 0 0;
+  padding: 24px var(--gutter) calc(24px + env(safe-area-inset-bottom, 0px)); max-width: 560px; margin: 0 auto; }
+.sheet h2 { font: 700 20px/1.2 var(--pixel); margin: 0 0 4px; }
+.sheet p { color: var(--ink-2); }
+.sheet label { display: block; font-weight: 600; font-size: 15px; margin: 16px 0 8px; }
+.stack { display: grid; gap: 12px; margin-top: 24px; }
+.stack .btn, .actions .btn { width: 100%; }
+.inrow { display: flex; gap: 8px; }
+.inrow .field { flex: 1; min-width: 0; }
+.inrow .btn { flex: none; width: 76px; }
+.actions { display: flex; gap: 12px; margin-top: 24px; }
+.toast { position: fixed; left: var(--gutter); right: var(--gutter); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); margin: 0 auto;
+  max-width: 480px; background: var(--ink); color: var(--body); padding: 12px 16px; border-radius: var(--r-2); font-size: 15px;
+  opacity: 0; transform: translateY(8px); transition: opacity 0.18s, transform 0.18s; pointer-events: none; z-index: 20; }
+.toast.show { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
 
 @media (orientation: landscape) and (min-width: 700px) {
   #watch { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: 100dvh; }
@@ -126,6 +152,7 @@ button:focus-visible { outline: 3px solid var(--led); outline-offset: 2px; }
   <input id="romFile" type="file" hidden>
   <p id="addNote" role="alert"></p>
   <p class="privacy">ROMs stay in this browser on this phone. Nothing is uploaded.</p>
+  <p class="version">Demo Mode v0.1</p>
 </main>
 
 <main id="watch" hidden>
@@ -161,18 +188,71 @@ button:focus-visible { outline: 3px solid var(--led); outline-offset: 2px; }
     </div>
     <div class="switches">
       <button class="switch" id="botBtn" type="button" role="switch" aria-checked="true">
-        <span class="switch-text"><b>Bot plays</b><small>It presses the buttons for you</small></span><span class="state">On</span>
+        <span class="switch-text"><b>Bot plays</b><small>Presses the buttons</small></span><span class="state">On</span>
       </button>
       <button class="switch" id="soundBtn" type="button" role="switch" aria-checked="false">
         <span class="switch-text"><b>Sound</b><small>At 1x only</small></span><span class="state">Off</span>
+      </button>
+      <button class="switch" id="sleepBtn" type="button" aria-haspopup="dialog" aria-pressed="false">
+        <span class="switch-text"><b>Sleep timer</b><small>Pauses and saves for you</small></span><span class="state" id="sleepLeft">Off</span>
+      </button>
+      <button class="switch" id="protectBtn" type="button" aria-haspopup="dialog" aria-pressed="false">
+        <span class="switch-text"><b>Protect units</b><small>Rewinds if they fall</small></span><span class="state" id="protectState">Lord</span>
       </button>
       <button class="switch" id="saverBtn" type="button" role="switch" aria-checked="false">
         <span class="switch-text"><b>Battery saver</b><small>Caps speed at 2x</small></span><span class="state">Off</span>
       </button>
     </div>
+    <button class="switch" id="recBtn" type="button" role="switch" aria-checked="false">
+      <span class="switch-text"><b>Record my play</b><small>For a chapter the bot cannot beat: turns the bot off</small></span><span class="state">Off</span>
+    </button>
+    <button id="recExport" class="btn" type="button" hidden>Save the recording</button>
+    <button id="logBtn" class="btn" type="button">Copy bot log</button>
     <button id="backBtn" class="btn flat" type="button">Save and go back to your ROMs</button>
   </div>
 </main>
+
+<dialog id="sleepDlg" aria-labelledby="slH">
+  <div class="sheet">
+    <h2 id="slH">Sleep timer</h2>
+    <p id="slInfo">Pause the game after:</p>
+    <div class="stack" id="slOpts">
+      <button type="button" class="btn" data-sleep="chapter" id="slChapter">End of this chapter</button>
+      <button type="button" class="btn" data-sleep="30">30 minutes</button>
+      <button type="button" class="btn" data-sleep="60">60 minutes</button>
+      <button type="button" class="btn" data-sleep="120">120 minutes</button>
+    </div>
+    <label for="slMin">Custom time</label>
+    <div class="inrow">
+      <input class="field" id="slMin" inputmode="numeric" placeholder="Minutes" aria-label="Minutes" autocomplete="off">
+      <input class="field" id="slSec" inputmode="numeric" placeholder="Seconds" aria-label="Seconds" autocomplete="off">
+      <button type="button" class="btn key" id="slGo">Start</button>
+    </div>
+    <div class="stack">
+      <button type="button" class="btn danger" data-sleep="off" id="slOff">Turn off timer</button>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn" id="slClose">Cancel</button>
+    </div>
+  </div>
+</dialog>
+<dialog id="protDlg" aria-labelledby="prH">
+  <div class="sheet">
+    <h2 id="prH">Protect units</h2>
+    <p>If a protected unit falls, the game goes back to the start of that turn and the bot tries again. Your lord is always protected, so a run never ends in a game over.</p>
+    <div class="switches" id="protList"></div>
+    <div class="actions"><button type="button" class="btn key" id="protDone">Done</button></div>
+  </div>
+</dialog>
+<dialog id="logDlg" aria-labelledby="lgH">
+  <div class="sheet">
+    <h2 id="lgH">Bot log</h2>
+    <p>Copying was blocked, so select all of this and copy it, then paste it into the chat.</p>
+    <textarea class="field textarea" id="logText" readonly></textarea>
+    <div class="actions"><button type="button" class="btn" id="logClose">Close</button></div>
+  </div>
+</dialog>
+<p class="toast" id="toast" role="status" aria-live="polite"></p>
 
 <script src="core.js"></script>
 <script src="bot-fe.js"></script>
@@ -202,8 +282,8 @@ async function romId(bytes) {
 function placeLabel(bot) {
   if (!bot || !WS.memReady()) return "";
   const ch = bot.chapter(), t = bot.turn();
-  if (ch >= 0x38 || t === 0) return "";
-  return `${ch === 0 ? "Prologue" : "Chapter " + ch}, turn ${t}`;
+  if (ch === 0x38 || t === 0) return "";
+  return `${(APP.bot && APP.bot.chapterTitle(ch)) || (ch > 0x38 ? "Skirmish" : "Chapter " + ch)}, turn ${t}`; // index 61 is Creeping Darkness, not a skirmish
 }
 
 // ---- Library -----------------------------------------------------------------------
@@ -272,6 +352,11 @@ async function startWatch(id, resume) {
   if (FEBot.supports(info.code)) {
     APP.bot = new FEBot(WS, info.code);
     APP.bot.onAction = () => snapshot();
+    APP.bot.onTurnStart = () => { if (APP.bot.enabled) turnWatch(APP.bot); };
+    APP.bot.onStuck = () => { saveRun(); toast("The bot seems stuck. Tap Copy bot log and paste it into the chat."); };
+    APP.protect = meta.protect || { all: false, ids: [] };
+    APP.meta = meta;
+    renderProtectState();
   } else {
     APP.bot = null;
     $("botBtn").disabled = true;
@@ -316,7 +401,7 @@ function setSpeed(s) {
 }
 for (const b of $("speeds").children) b.onclick = () => setSpeed(+b.dataset.speed);
 $("pauseBtn").onclick = () => {
-  WS.paused = !WS.paused; if (WS.paused) WS.releaseAll();
+  WS.paused = !WS.paused; if (WS.paused) WS.releaseAll(); else WS.keepAwake(true);
   $("pauseBtn").textContent = WS.paused ? "Play" : "Pause";
   WS.applySound();
 };
@@ -338,7 +423,365 @@ $("botBtn").onclick = () => {
   setSwitch("botBtn", APP.bot.enabled);
 };
 $("backBtn").onclick = async () => { await saveRun(); WS.keepAwake(false); location.reload(); };
+
+// ---- Recorder: Casim plays a chapter the bot cannot beat; every move he makes is written down, with a
+// save and a picture of the screen at the start of each of his turns, so his way of playing can be
+// turned into rules or a playbook for that chapter afterwards.
+const REC = { on: false, data: null, lastTurn: -1, phaseUnits: null, battle: null };
+const b64 = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, i + 8192)); return btoa(s); };
+function recUnits(bot) {
+  const out = [];
+  for (const side of ["blue", "green", "red"]) {
+    const [base, n] = bot.g.units[side];
+    for (let i = 0; i < n; i++) {
+      const a = base + i * 0x48, ch = bot.r32(a);
+      if (!ch) continue;
+      const st = bot.r32(a + 0x0C);
+      if (st & 0x0C) continue;  // dead or not deployed
+      const u = bot.readUnit(a, side);
+      if (!u) continue;
+      out.push({ side, slot: i, name: bot.charName(u.charId), cls: bot.text(bot.r16(u.classPtr)), x: u.x, y: u.y, hp: u.hp, maxHP: u.maxHP,
+        done: !!(st & 0x2), items: u.items.map((it) => bot.text(bot.r16(bot.g.itemData + it.id * bot.g.itemSize)) + "(" + it.uses + ")") });
+    }
+  }
+  return out;
+}
+setInterval(() => {
+  const bot = APP.bot;
+  if (!REC.on || !bot || !WS.started || !WS.memReady()) return;
+  const t = bot.turn(), ph = bot.phase(), ch = bot.chapter();
+  if (ch !== REC.data.chapter) return;
+  // Who is fighting whom right now (kept until the action is written down).
+  // (The battle data stays in memory after a fight, so only a new pairing counts as this unit's battle.)
+  const ids = bot.battleIds();
+  const bkey = ids.join(",") + ":" + bot.r8(0x0203A4EC + 0x13) + ":" + bot.r8(0x0203A56C + 0x13);
+  if (ids.length === 2 && bkey !== REC.lastBattle) { REC.lastBattle = bkey; REC.battle = ids.map((id) => bot.charName(id)); }
+  if (ph === 0 && t !== REC.lastTurn) {           // a new player turn: save, picture, everyone's position
+    REC.lastTurn = t;
+    const units = recUnits(bot);
+    const entry = { turn: t, state: b64(WS.saveState()), shot: null, units };
+    REC.data.turns.push(entry); REC.needShot = entry; // the picture is taken right after the next frame is drawn
+    REC.phaseUnits = new Map(units.filter((u) => u.side === "blue").map((u) => [u.name, u]));
+  }
+  if (ph === 0 && REC.phaseUnits) {               // a unit has finished its action: write down what it did
+    for (const u of recUnits(bot).filter((x) => x.side === "blue")) {
+      const was = REC.phaseUnits.get(u.name);
+      if (!was || was.done || !u.done) continue;
+      REC.data.actions.push({ turn: t, unit: u.name, cls: u.cls, from: [was.x, was.y], to: [u.x, u.y], hp: [was.hp, u.hp],
+        items: JSON.stringify(was.items) !== JSON.stringify(u.items) ? [was.items, u.items] : null, battle: REC.battle });
+      REC.battle = null;
+      REC.phaseUnits.set(u.name, u);
+    }
+  }
+}, 150);
+$("recBtn").onclick = () => {
+  const bot = APP.bot;
+  if (!bot || !WS.memReady()) return;
+  // The screen is a WebGL canvas that is cleared once shown, so it can only be copied in the same moment
+  // a frame is drawn: hook the per-refresh callback once.
+  if (!REC.hooked) {
+    REC.hooked = true;
+    const prev = WS.onTick;
+    WS.onTick = (...a) => { const r = prev ? prev(...a) : undefined; if (REC.needShot) { try { REC.needShot.shot = $("screen").toDataURL("image/png"); } catch (e) { /* skip */ } REC.needShot = null; } return r; };
+  }
+  REC.on = !REC.on;
+  setSwitch("recBtn", REC.on);
+  if (REC.on) {
+    bot.enabled = false; WS.releaseAll(); setSwitch("botBtn", false);
+    REC.data = { version: 1, made: new Date().toISOString(), chapter: bot.chapter(), title: bot.chapterTitle(bot.chapter()), turns: [], actions: [] };
+    REC.lastTurn = -1; REC.phaseUnits = null; REC.battle = null; REC.lastBattle = (() => { const i = bot.battleIds(); return i.join(",") + ":" + bot.r8(0x0203A4EC + 0x13) + ":" + bot.r8(0x0203A56C + 0x13); })();
+    $("recExport").hidden = false;
+    bot.say(`Recording your play in ${REC.data.title}: the bot is off until you turn it back on`);
+  }
+};
+$("recExport").onclick = () => {
+  if (!REC.data) return;
+  const blob = new Blob([JSON.stringify(REC.data)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `recording-${(REC.data.title || "chapter").replace(/[^A-Za-z0-9]+/g, "-")}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+};
 $("resumeHidden").onclick = () => { WS.hiddenPause = false; $("hiddenNote").hidden = true; WS.keepAwake(true); WS.applySound(); };
+
+// ---- Sleep timer (same pattern as Clip & Play) ---------------------------------------
+// When it ends: save the run, pause, and release the screen lock so the phone can sleep.
+let sleep = null; // { mode: "chapter", chapter } or { mode: "time", end: ms }
+let toastTimer = 0;
+function toast(msg) {
+  $("toast").textContent = msg; $("toast").classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("show"), 4500);
+}
+const fmt = (s) => {
+  if (!isFinite(s) || s < 0) s = 0; s = Math.floor(s);
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${x}` : `${m}:${x}`;
+};
+function sleepText() {
+  if (!sleep) return "Off";
+  if (sleep.mode === "chapter") return "Ch. end";
+  return fmt(Math.max(0, Math.ceil((sleep.end - Date.now()) / 1000)));
+}
+function updateSleep() {
+  const txt = sleepText();
+  if ($("sleepLeft").textContent !== txt) $("sleepLeft").textContent = txt;
+  $("sleepBtn").setAttribute("aria-pressed", String(!!sleep));
+  $("sleepBtn").setAttribute("aria-label", !sleep ? "Sleep timer, off" : sleep.mode === "chapter"
+    ? "Sleep timer: pauses at the end of this chapter" : `Sleep timer: ${txt} left`);
+  syncSleepTimer();
+}
+async function sleepNow(msg) {
+  sleep = null; updateSleep();
+  await saveRun();
+  WS.paused = true; WS.releaseAll(); WS.applySound();
+  $("pauseBtn").textContent = "Play";
+  WS.keepAwake(false);
+  toast(msg);
+}
+function checkSleep() {
+  if (sleep && sleep.mode === "time" && Date.now() >= sleep.end) sleepNow("Sleep timer paused the game and saved your run.");
+  else if (sleep) updateSleep();
+}
+let sleepTimer = 0;
+function syncSleepTimer() {
+  const need = !!(sleep && sleep.mode === "time") && document.visibilityState !== "hidden";
+  if (need && !sleepTimer) sleepTimer = setInterval(checkSleep, 1000);
+  else if (!need && sleepTimer) { clearInterval(sleepTimer); sleepTimer = 0; }
+}
+document.addEventListener("visibilitychange", () => { syncSleepTimer(); if (!document.hidden) checkSleep(); });
+$("sleepBtn").onclick = () => {
+  $("slInfo").textContent = !sleep ? "Pause the game after:" : sleep.mode === "chapter"
+    ? "Set to pause at the end of this chapter. Change it to:" : `${sleepText()} left. Change it to:`;
+  $("slOff").hidden = !sleep;
+  $("slChapter").hidden = !(APP.bot && WS.memReady());
+  $("sleepDlg").showModal();
+};
+$("slClose").onclick = () => $("sleepDlg").close();
+$("slGo").onclick = () => {
+  const m = $("slMin").value.trim() === "" ? 0 : Number($("slMin").value), s = $("slSec").value.trim() === "" ? 0 : Number($("slSec").value);
+  const total = Math.round(m * 60 + s);
+  if (!isFinite(total) || m < 0 || s < 0 || total < 1 || total > 24 * 3600) { $("slInfo").textContent = "Enter a time, like 45 minutes and 0 seconds."; return; }
+  sleep = { mode: "time", end: Date.now() + total * 1000 };
+  updateSleep(); $("sleepDlg").close();
+  toast(`The game will pause in ${fmt(total)}.`);
+};
+[$("slMin"), $("slSec")].forEach((f) => f.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("slGo").click(); } }));
+$("slOpts").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-sleep]"); if (!b) return;
+  const v = b.dataset.sleep;
+  sleep = v === "off" ? null : v === "chapter" ? { mode: "chapter", chapter: APP.bot.chapter() } : { mode: "time", end: Date.now() + (+v) * 60000 };
+  updateSleep(); $("sleepDlg").close();
+  toast(!sleep ? "Sleep timer off." : sleep.mode === "chapter" ? "The game will pause when this chapter ends." : `The game will pause in ${v} minutes.`);
+});
+$("slOff").onclick = () => { sleep = null; updateSleep(); $("sleepDlg").close(); toast("Sleep timer off."); };
+
+// ---- Protect units: rewind to the start of the turn when a protected unit falls -------
+// The lord is always protected (a lord's death is a game over in Fire Emblem).
+APP.turnSnaps = []; APP.retries = {}; APP.accepted = new Set();
+function isProtected(id) {
+  return APP.bot.g.lordIds.includes(id) || APP.protect.all || APP.protect.ids.includes(id);
+}
+function renderProtectState() {
+  const p = APP.protect || { all: false, ids: [] };
+  $("protectState").textContent = p.all ? "All" : p.ids.length ? `+${p.ids.length}` : "Lord";
+  $("protectBtn").setAttribute("aria-pressed", String(p.all || p.ids.length > 0));
+}
+function protectRow(label, sub, on, fn) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "switch"; b.setAttribute("role", "switch"); b.setAttribute("aria-checked", String(on));
+  b.innerHTML = '<span class="switch-text"><b></b><small></small></span><span class="state"></span>';
+  b.querySelector("b").textContent = label; b.querySelector("small").textContent = sub;
+  b.querySelector(".state").textContent = on ? "On" : "Off";
+  b.onclick = fn; return b;
+}
+function renderProtectList() {
+  const list = $("protList"); list.textContent = "";
+  const p = APP.protect;
+  list.appendChild(protectRow("All units", "Nobody is ever lost", p.all, () => { p.all = !p.all; saveProtect(); }));
+  if (!p.all && APP.bot && WS.memReady()) {
+    for (const u of APP.bot.roster()) {
+      if (u.lord) { list.appendChild(protectRow(u.name, "Lord, always protected", true, () => {})); continue; }
+      const on = p.ids.includes(u.id);
+      list.appendChild(protectRow(u.name, on ? "Protected" : "Can fall", on, () => {
+        p.ids = on ? p.ids.filter((x) => x !== u.id) : [...p.ids, u.id]; saveProtect();
+      }));
+    }
+  }
+}
+async function saveProtect() {
+  renderProtectList(); renderProtectState();
+  if (APP.meta) { APP.meta.protect = APP.protect; await WS.store.put("runs", APP.meta); }
+}
+$("protectBtn").onclick = () => { if (!APP.bot) return; renderProtectList(); $("protDlg").showModal(); };
+$("protDone").onclick = () => $("protDlg").close();
+
+function turnWatch(bot) {
+  const ch = bot.chapter(), t = bot.turn(), key = `${ch}:${t}`;
+  const last = APP.turnSnaps[APP.turnSnaps.length - 1];
+  // A fresh snapshot each time a player phase starts on the battle map.
+  // Also right away when a save is loaded in the middle of a player turn (no snapshot for this
+  // chapter yet), or a death before the next player phase could not be undone. Not mid enemy turn:
+  // the fights are already decided there, so rewinding to it would just replay the same death.
+  // An enemy recruit (Cormag) vanishes for a moment while a cutscene reloads him, so he only counts
+  // as lost if he is still gone when the next player turn starts: checked here, before that turn's
+  // snapshot would forget him.
+  // Remember anyone brought to 0 HP in a battle since the last snapshot.
+  if (bot.sceneKind === "battle") {
+    APP.battleKills = APP.battleKills || new Set(); for (const id of bot.battleDeaths()) APP.battleKills.add(id);
+    APP.inBattle = APP.inBattle || new Set(); for (const id of bot.battleIds()) APP.inBattle.add(id);
+  }
+  // Learn damaging terrain: note everyone's HP as the player phase ends; at the next player phase, a
+  // unit that lost HP without being in any battle was hurt by the square it stood on (lava).
+  if (bot.phase() !== 0 && !APP.hpEnd) { APP.hpEnd = { ch, t, units: bot.blueHp() }; APP.inBattle = new Set(); }
+  if (bot.phase() === 0 && APP.hpEnd) {
+    const was = APP.hpEnd; APP.hpEnd = null;
+    if (was.ch === ch && t === was.t + 1) {
+      const now = bot.blueHp(), m = bot.map();
+      for (const [id, b] of was.units) {
+        if ((APP.inBattle && APP.inBattle.has(id)) || b.poisoned) continue; // poison also costs HP between turns
+        const n = now.get(id);
+        const lost = n ? b.hp - n.hp : b.hp; // gone entirely: burned to death
+        if (lost >= 5 && b.x >= 0 && m.t[b.y]) bot.noteHazard(m.t[b.y][b.x]);
+      }
+    }
+  }
+  const lostRed = APP.protect.all && last && last.chapter === ch && last.key !== key && bot.phase() === 0 && bot.sceneKind === "free"
+    ? (last.redRecruits || []).filter((id) => !bot.aliveAnywhere(id) && !APP.accepted.has(id)) : [];
+  // Some recruits leave the map in a scripted scene (Amelia in Distant Blade is gone at the start of
+  // turn 12 every time). Retrying can't stop that, so after the same recruit vanishes at the same
+  // turn three times, accept it and carry on instead of looping forever.
+  APP.redGone = APP.redGone || new Map();
+  for (const id of lostRed.slice()) {
+    if (APP.battleKills && APP.battleKills.has(id)) continue; // killed in a battle (Amelia, Hamill Canyon): a death, not an exit
+    bot.noteRecruitExit(id); // vanished without a fight: learn where he leaves the map
+    const k = `${ch}:${t}:${id}`, n = (APP.redGone.get(k) || 0) + 1;
+    APP.redGone.set(k, n);
+    if (n >= 3) {
+      APP.accepted.add(id); lostRed.splice(lostRed.indexOf(id), 1);
+      bot.say(`${bot.charName(id)} left the map at the start of turn ${t} on every try; carrying on without them`);
+    }
+  }
+  const first = (!last || last.chapter !== ch) && t > 0 && t < 250 && ch !== 0x38 && bot.phase() === 0 && bot.sceneKind === "free"; // never mid-move: a unit saved mid-walk stays hidden after a rewind
+  if (!lostRed.length && (first || (bot.phase() === 0 && bot.sceneKind === "free" && t > 0 && ch !== 0x38)) && (!last || last.key !== key)) {
+    if (last && last.chapter !== ch) { APP.turnSnaps = []; APP.retries = {}; APP.accepted = new Set(); bot.caution = 0; }
+    else if (bot.caution > 0) bot.caution--;
+    // A turn the run has never reached before: the fight is moving forward again.
+    if (!APP.stretch || APP.stretch.ch !== ch || t > APP.stretch.maxTurn) {
+      APP.stretch = { ch, maxTurn: t, fails: 0 };
+      bot.failedSquares = new Set(); // new ground: the bans from earlier retries have done their job
+    }
+    // Making headway again after a deep rewind (two turns past where it landed): back off the depth.
+    else if (APP.stretch.depth && APP.stretch.landed !== undefined && t >= APP.stretch.landed + 2) { APP.stretch.depth--; APP.stretch.landed = t; APP.stretch.fails = 0; }
+    APP.battleKills = new Set();
+    APP.turnSnaps.push({ key, chapter: ch, turn: t, state: WS.saveState(), dead: bot.deadBlue(), recruits: bot.pendingRecruits(), redRecruits: bot.protectedEnemyRecruits(), alive: bot.aliveBlue() });
+    if (APP.turnSnaps.length > 12) APP.turnSnaps.shift(); // room to back up several turns and try a different plan
+    return;
+  }
+  const procNames = (() => { try { return bot.scene().ps.map((p) => p.name || ""); } catch (e) { return []; } })();
+  const gameOver = procNames.some((n) => /opinfo|gameover/i.test(n));
+  if (!last || (last.chapter !== ch && !gameOver)) return;
+  // Not during the chapter-end scenes (the turn counter and phase read as junk there, and the
+  // units the chapter leaves behind disappear): only check on a real player, enemy or ally phase.
+  // Game over (the lord died in the enemy phase): the game goes straight to its game-over screen and
+  // then the title demo ("opinfo"), so no death is ever seen on the map. Rewind as for a lord's death.
+  // (Last Hope sat in the title demo for hours, read as an enemy phase that never ended.)
+  if (!gameOver && (![0, 0x40, 0x80].includes(bot.phase()) || t > 250 || t < last.turn)) return;
+  // Only someone who was alive on our side at the start of the turn can fall (at chapter end the game
+  // files never-recruited characters into the army list as dead, which is not a death).
+  const fallen = gameOver ? [bot.g.lordIds.find((id) => (last.alive || []).includes(id)) ?? bot.g.lordIds[0]]
+    : bot.deadBlue().filter((id) => !last.dead.includes(id) && (!last.alive || last.alive.includes(id)) && !APP.accepted.has(id));
+  // With "All units" protected, a future recruit who is killed before joining counts too.
+  // (Only during an enemy or ally phase: when the lord seizes, the chapter ends and the map's
+  // remaining green units vanish, which is not a death.)
+  if (APP.protect.all && bot.phase() !== 0) for (const id of last.recruits || []) if (!bot.aliveAnywhere(id) && !APP.accepted.has(id) && !fallen.includes(id)) {
+    // Same as for enemy recruits: an ally who vanishes without being beaten in a battle, at the same
+    // turn on three tries, has left the map in a scene; carry on rather than loop.
+    if (!(APP.battleKills && APP.battleKills.has(id))) {
+      APP.redGone = APP.redGone || new Map();
+      const k = `${ch}:${t}:${id}:g`, n = (APP.redGone.get(k) || 0) + 1; APP.redGone.set(k, n);
+      if (n >= 3) { APP.accepted.add(id); bot.say(`${bot.charName(id)} left the map during turn ${t} on every try; carrying on`); continue; }
+    }
+    fallen.push(id);
+  }
+  for (const id of lostRed) if (!fallen.includes(id)) fallen.push(id);
+  // Accepted losses (Casim's call): in Last Hope only, Dozla, Marisa, Rennac and Knoll may fall without a
+  // rewind; everyone else, Mansel and the lords still rewind, and from the next chapter nobody may fall.
+  const expendable = { "Last Hope": ["Dozla", "Marisa", "Rennac", "Knoll"] }[bot.chapterTitle(ch)] || [];
+  for (const id of fallen.slice()) if (expendable.includes(bot.charName(id))) {
+    fallen.splice(fallen.indexOf(id), 1); APP.accepted.add(id);
+    bot.say(`${bot.charName(id)} fell (an accepted loss in this chapter); carrying on`);
+  }
+  // A teammate who died with no battle (burned by lava between phases): learn that square's terrain.
+  if (APP.hpEnd && APP.hpEnd.ch === ch) {
+    const m = bot.map();
+    for (const id of fallen) {
+      const b = APP.hpEnd.units.get(id);
+      if (b && !b.poisoned && !(APP.battleKills && APP.battleKills.has(id)) && !(APP.inBattle && APP.inBattle.has(id)) && m.t[b.y]) bot.noteHazard(m.t[b.y][b.x]);
+    }
+  }
+  if (!fallen.length) return;
+  const hit = fallen.find(isProtected);
+  if (hit === undefined) { fallen.forEach((id) => APP.accepted.add(id)); return; }
+  const name = bot.charName(hit);
+  APP.retries[last.key] = (APP.retries[last.key] || 0) + 1;
+  const isLord = bot.g.lordIds.includes(hit);
+  APP.fallCount = APP.fallCount || {};
+  const fc = APP.fallCount[`${ch}:${hit}`] = (APP.fallCount[`${ch}:${hit}`] || 0) + 1;
+  if ((APP.retries[last.key] > 8 && APP.turnSnaps.length <= 1) || fc > 12) {
+    // Never give up on a unit: rewind once more, then pause the run and flag it, so nobody is
+    // lost without the viewer knowing (Casim's rule).
+    WS.loadState(last.state); APP.accepted = new Set(); bot.reset();
+    WS.paused = true; WS.releaseAll(); $("pauseBtn").textContent = "Play";
+    const msg = `The bot keeps losing ${name} here. Paused at the start of this turn: tap Copy bot log and send it to Claude.`;
+    bot.say(msg); toast(msg);
+    APP.fallCount[`${ch}:${hit}`] = 0;
+    return;
+  }
+  // Count failures across the whole stretch since the run last reached a new turn, not per turn:
+  // deaths bouncing between turns 7 and 8 add up, and every 4 of them the rewind goes one turn
+  // further back, so the bot gets to try a genuinely different approach.
+  if (!APP.stretch || APP.stretch.ch !== ch) APP.stretch = { ch, maxTurn: t, fails: 0 };
+  APP.stretch.fails++;
+  // Every 4 failures go back one turn further than last time, up to 9 turns at once (Seth in
+  // Chapter 15 was cornered at 1 HP; the mistake that put him there was 5+ turns earlier).
+  // Late in a Survive chapter, deep rewinds throw away nearly finished progress (Last Hope reached turn
+  // 12 of 13 and cascaded back to turn 5): retry the same turn up to 12 times before stepping back,
+  // and never step back more than 2 turns.
+  // ...counted from the turn being retried: within 4 turns of the furthest the chapter has reached, once
+  // that is turn 9 or later (a late best alone kept turn 6 from ever stepping back; turn 9 alone let a
+  // failure at turn 8 cascade back to turn 5).
+  const lateSurvive = bot.goalType() === 2 && APP.stretch.maxTurn >= 9 && t >= APP.stretch.maxTurn - 4;
+  if (APP.stretch.fails > (lateSurvive ? 12 : 4)) { APP.stretch.fails = 1; APP.stretch.depth = Math.min(lateSurvive ? 2 : 8, (APP.stretch.depth || 0) + 1); }
+  const back = Math.min(APP.turnSnaps.length, 1 + (APP.stretch.depth || 0));
+  for (let i = 1; i < back; i++) APP.turnSnaps.pop();
+  let snap = APP.turnSnaps[APP.turnSnaps.length - 1];
+  APP.stretch.landed = snap.turn;
+  bot.noteFailure(hit, t); // do not repeat the move that just failed
+  WS.loadState(snap.state);
+  APP.accepted = new Set(); // units who fell after this snapshot are alive again
+  bot.reset(); bot.caution = Math.min(4, bot.caution + 1);
+  const msg = `${name} fell. Back to the start of turn ${snap.turn} to try again.`;
+  bot.say(msg); toast(msg);
+}
+
+// ---- Copy bot log ---------------------------------------------------------------------
+$("logBtn").onclick = async () => {
+  const meta = APP.meta || {};
+  const text = [`Demo Mode v0.1`, `${meta.name || "?"} ${meta.serial || ""}`, `speed ${WS.speed}x paused ${WS.paused} frame ${WS.frame}`,
+    APP.bot ? APP.bot.debugDump() : "No bot for this game."].join("\n");
+  try { await navigator.clipboard.writeText(text); toast("Bot log copied. Paste it into the chat."); }
+  catch (e) { $("logText").value = text; $("logDlg").showModal(); $("logText").select(); }
+};
+$("logClose").onclick = () => $("logDlg").close();
+
+// Keyboard on a computer: Space pauses, 1 to 4 pick 1x/2x/4x/8x, R rewinds one action.
+document.addEventListener("keydown", (e) => {
+  if ($("watch").hidden || document.querySelector("dialog[open]") || e.metaKey || e.ctrlKey || e.altKey) return;
+  const sp = { "1": 1, "2": 2, "3": 4, "4": 8 }[e.key];
+  if (sp) { setSpeed(sp); e.preventDefault(); }
+  else if (e.key === " ") { $("pauseBtn").click(); e.preventDefault(); }
+  else if (e.key === "r" || e.key === "R") { $("rewindBtn").click(); }
+});
 
 WS.onTick = () => {
   if (WS.hiddenPause && !document.hidden) $("hiddenNote").hidden = false;
@@ -348,6 +791,8 @@ WS.onTick = () => {
   mode.textContent = WS.paused ? "Paused" : playing ? `Demo ${WS.speed}x` : "Bot off";
   mode.className = "mode" + (playing ? "" : " off");
   if (!bot || !WS.memReady()) return;
+  if (bot.enabled && !WS.paused) turnWatch(bot);
+  if (sleep && sleep.mode === "chapter" && !WS.paused && bot.chapter() !== sleep.chapter) sleepNow("Chapter over. Sleep timer paused the game and saved your run.");
   const ph = { 0: "player phase", 0x40: "other army", 0x80: "enemy phase" }[bot.phase()] || "";
   const place = placeLabel(bot);
   const onMap = ["free", "moveSelect", "enemyPhase", "battle", "busy", "menu", "target"].includes(bot.sceneKind);

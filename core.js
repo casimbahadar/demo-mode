@@ -25,10 +25,18 @@ const WS = (() => {
     started: false,
   };
 
+  // Speed is measured against the clock, not the screen's refresh rate: Safari drops to
+  // 30 refreshes a second in Low Power Mode, and some screens refresh at 120. Either way
+  // 4x means 240 game frames a second (when the phone can keep up).
+  let lastT = 0, owed = 0;
   function tick(t) {
     realRAF(tick);
+    const dt = lastT ? Math.min(100, t - lastT) : 16.7; lastT = t;
     if (ws.started && !ws.paused && !ws.hiddenPause) {
-      for (let i = 0; i < ws.speed; i++) {
+      owed += ws.speed * 60 * dt / 1000;
+      const n = Math.min(Math.floor(owed), ws.speed * 4); // cap catch-up after a stall
+      owed = Math.min(owed - n, ws.speed);
+      for (let i = 0; i < n; i++) {
         const q = queue; queue = [];
         if (!q.length) break;
         for (const cb of q) cb(t);
@@ -156,6 +164,8 @@ const WS = (() => {
   ws.r16 = (a) => ws.r8(a) | (ws.r8(a + 1) << 8);
   ws.s16 = (a) => { const v = ws.r16(a); return v > 32767 ? v - 65536 : v; };
   ws.r32 = (a) => (ws.r16(a) | (ws.r16(a + 2) << 16)) >>> 0;
+  // Writes are for the test harness only; bots play by pressing buttons.
+  ws.w8 = (a, v) => { const h = hostAddr(a); if (h >= 0) ws.M.HEAPU8[h] = v & 0xFF; };
 
   // ---- Save states ------------------------------------------------------------------
   ws.saveState = () => {
