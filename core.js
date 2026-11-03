@@ -60,6 +60,26 @@ const WS = (() => {
     window[name] = function (...args) { const c = new Orig(...args); audioContexts.push(c); return c; };
     window[name].prototype = Orig.prototype;
   }
+  // Sound above 1x. The core still hands over sound at the normal rate (about 690 small buffers of 256
+  // samples every 4 seconds at any speed, measured), so at 1.5x or 2x it skips pieces of the game's
+  // sound, and each skip is a sudden jump in the wave: that jump is the static. Above 1x, the start of
+  // each buffer is eased from where the previous one ended (over 24 samples, about half a millisecond),
+  // which removes the jump without changing the sound or its timing. At 1x nothing is touched.
+  if (window.AudioBufferSourceNode) {
+    const AS = AudioBufferSourceNode.prototype, origStart = AS.start;
+    AS.start = function (...args) {
+      const c = this.context, b = this.buffer;
+      if (ws.speed > 1 && b && b.length > 48) {
+        c.__last = c.__last || [];
+        for (let ch = 0; ch < b.numberOfChannels; ch++) {
+          const d = b.getChannelData(ch), prev = c.__last[ch];
+          if (prev !== undefined) { const jump = prev - d[0]; const N = 24; for (let i = 0; i < N; i++) d[i] += jump * (1 - i / N); }
+          c.__last[ch] = d[d.length - 1];
+        }
+      } else if (c.__last) c.__last = null;
+      return origStart.apply(this, args);
+    };
+  }
   ws.soundWanted = false;
   ws.applySound = () => {
     // Sound up to 2x (Casim asked to try it sped up); above that it cannot keep up at all.
