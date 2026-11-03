@@ -2040,7 +2040,12 @@ class FEBot {
         // Behind the wall (Last Hope): any action taken from outside the walled camp costs the same as moving there.
         const outsideWall = this.wallCamp && wards.length && !this.wallCamp.has(t) ? 250 + 40 * Math.min(10, Math.abs(tile.x - tA.x) + Math.abs(tile.y - tA.y)) : 0;
         const standAway = wards.length && this.turn() >= 8 && campAt === tA && !(u.maxHP < 25 || u.def < 6) ? Math.max(0, Math.abs(tile.x - tA.x) + Math.abs(tile.y - tA.y) - 2) * 60 : 0; // last stand: attacks and other actions too
-        const consider = (opt) => { opt.score -= blockPen + leavesGuard + lordAway + outsideWall + standAway; if (!best || opt.score > best.score) best = opt; };
+        // Only the boss left in an early chapter: the lord takes a forest or fort square next to him and
+        // fights from there (Casim: in the Prologue, Eirika on the forest above O'Neill), rather than
+        // hanging back until someone else kills him.
+        const bossOnly = lord && this.chapter() < 5 && enemies.length === 1 && (this.r32(enemies[0].charPtr + 0x28) & 0x8000);
+        const perch = bossOnly && Math.abs(tile.x - enemies[0].x) + Math.abs(tile.y - enemies[0].y) === 1 && [0x0A, 0x0C, 0x0D].includes(m.t[tile.y][tile.x]) /* fort, forest, thicket */ ? 250 : 0;
+        const consider = (opt) => { opt.score += perch; opt.score -= blockPen + leavesGuard + lordAway + outsideWall + standAway; if (!best || opt.score > best.score) best = opt; };
         const adj = (p) => Math.abs(p.x - tile.x) + Math.abs(p.y - tile.y) === 1;
         // Option: rescue a would-be recruit who is in trouble and carry them to their recruiter
         // (Chapter 2: Vanessa flies over the mountains, picks up Ross, brings him back to Eirika).
@@ -2280,7 +2285,7 @@ class FEBot {
           // ...and fights at all when it is that safe, kill or not: the experience is the point
           // (Eirika should take the Prologue's first Fighters herself).
           const lordFeed = lord && res.pDie < 0.15 && this.chapter() < 15 ? 90 * res.pKill + 80 : 0;
-          const score = 120 * res.pKill + 2.5 * res.expDealt + chip + guard + siege + staffer + rescue - (greenRace ? 250 : 0) - leavesGuard - outsideWall - standAway - jagenKill + lordFeed - (lord && wards.length ? Math.max(0, Math.abs(tile.x - tA.x) + Math.abs(tile.y - tA.y) - 3) * 15 : 0) - (lord ? (res.pDie < 0.15 ? 200 : 600) : endgame ? 80 : 200) * care * res.pDie - 1.2 * res.expTaken // greenRace: no detours while racing to a green recruit; leavesGuard: guards beside a ward stay put
+          const score = 120 * res.pKill + 2.5 * res.expDealt + chip + guard + siege + staffer + rescue - (greenRace ? 250 : 0) - leavesGuard - outsideWall - standAway - jagenKill + lordFeed + perch - (lord && wards.length ? Math.max(0, Math.abs(tile.x - tA.x) + Math.abs(tile.y - tA.y) - 3) * 15 : 0) - (lord ? (res.pDie < 0.15 ? 200 : 600) : endgame ? 80 : 200) * care * res.pDie - 1.2 * res.expTaken // greenRace: no detours while racing to a green recruit; leavesGuard: guards beside a ward stay put
             - penalty(dg, hpAfter) + progress * 0.3 + 5 + jitter() - blockPen
             // A unit left below 60% by the counter, on a square where the enemy phase can finish it, does
             // not make that attack (Gerik kept attacking a Hero from the north-west doorway of Last Hope).
@@ -2369,7 +2374,7 @@ class FEBot {
         const lordHome = keepHome ? Math.max(0, Math.abs(tile.x - tA.x) + Math.abs(tile.y - tA.y) - 3) * (lord ? 120 : 15) : 0; // the lord strongly (Eirika walked out to 20,14 in Last Hope and was cut down)
         // Hurt (below 60%) and on a square enemies can reach: step back and let a healthier unit hold it.
         const hurtFront = u.hp < u.maxHP * 0.6 && dg.max > 0 ? 40 + 60 * Math.min(1, dg.max / Math.max(1, u.hp)) : 0;
-        const score = progress - penalty(dg, u.hp) + (t === key(u.x, u.y) ? 0.5 : 0) + jitter() - blockPen - huddle - siegePen - spawnPen - lordLeash + chokeBonus - leavesGuard - lordHome - hurtFront;
+        const score = progress - penalty(dg, u.hp) + (t === key(u.x, u.y) ? 0.5 : 0) + jitter() - blockPen - huddle - siegePen - spawnPen - lordLeash + chokeBonus - leavesGuard - lordHome - hurtFront + perch;
         if (this.dbgMoves) this.dbgMoves.push([this.uname(u), tile.x, tile.y, Math.round(score), Math.round(progress), Math.round(penalty(dg, u.hp)), blockPen, Math.round(dg.exp), dg.max, threat.filter((th) => th.tiles.has(t)).map((th) => this.uname(th.e)).join(",")]);
         if (!best || score > best.score) {
           const toward = lord && seize.length ? "the objective" : "the enemy";
