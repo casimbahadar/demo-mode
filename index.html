@@ -91,6 +91,8 @@ button:focus-visible { outline: 3px solid var(--led); outline-offset: 2px; }
 .what { margin-top: 4px; font-size: 17px; font-weight: 600; }
 .speed { display: flex; align-items: center; gap: 12px; }
 .speed-name { font-weight: 650; color: var(--ink-2); min-width: 52px; }
+#speedSlider { flex: 1; accent-color: var(--key); min-height: var(--btn-h); }
+#speedValue { min-width: 44px; text-align: right; font: 700 16px/1 var(--pixel); }
 .seg { display: flex; flex: 1; border: 1px solid var(--seam); border-radius: var(--r-2); overflow: hidden; }
 .seg button { flex: 1; min-height: var(--btn-h); border: 0; background: var(--shell); font-weight: 650; }
 .seg button + button { border-left: 1px solid var(--seam); }
@@ -132,7 +134,7 @@ dialog::backdrop { background: rgba(8, 9, 10, 0.72); }
 @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
 
 @media (orientation: landscape) and (min-width: 700px) {
-  #watch { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: 100dvh; }
+  #watch { display: grid; grid-template-columns: minmax(0, 1fr) 280px; height: 100dvh; }
   .stage { display: grid; place-items: center; height: 100dvh; }
   #screen { width: min(100%, calc(100dvh * 1.5)); height: auto; }
   .deck { overflow-y: auto; max-height: 100dvh; padding-top: 16px; margin: 0; }
@@ -169,7 +171,7 @@ dialog::backdrop { background: rgba(8, 9, 10, 0.72); }
     </div>
   </div>
   <div class="deck">
-    <div class="status" role="status" aria-live="polite">
+    <div class="status" role="status" aria-live="polite" hidden>
       <div class="status-top"><p class="where" id="statusWhere">Loading</p><p class="mode" id="statusMode">Demo</p></div>
       <p class="what" id="statusWhat">Starting</p>
     </div>
@@ -179,19 +181,15 @@ dialog::backdrop { background: rgba(8, 9, 10, 0.72); }
     </div>
     <div class="speed">
       <span class="speed-name" id="speedLabel">Speed</span>
-      <div class="seg" role="group" aria-labelledby="speedLabel" id="speeds">
-        <button type="button" data-speed="1">1x</button>
-        <button type="button" data-speed="2">2x</button>
-        <button type="button" data-speed="4" aria-pressed="true">4x</button>
-        <button type="button" data-speed="8">8x</button>
-      </div>
+      <input type="range" id="speedSlider" min="1" max="8" step="0.5" value="4" aria-labelledby="speedLabel">
+      <output id="speedValue" for="speedSlider">4x</output>
     </div>
     <div class="switches">
       <button class="switch" id="botBtn" type="button" role="switch" aria-checked="true">
         <span class="switch-text"><b>Bot plays</b><small>Presses the buttons</small></span><span class="state">On</span>
       </button>
       <button class="switch" id="soundBtn" type="button" role="switch" aria-checked="false">
-        <span class="switch-text"><b>Sound</b><small>At 1x only</small></span><span class="state">Off</span>
+        <span class="switch-text"><b>Sound</b><small>Up to 2x (sped up above 1x)</small></span><span class="state">Off</span>
       </button>
       <button class="switch" id="sleepBtn" type="button" aria-haspopup="dialog" aria-pressed="false">
         <span class="switch-text"><b>Sleep timer</b><small>Pauses and saves for you</small></span><span class="state" id="sleepLeft">Off</span>
@@ -396,10 +394,10 @@ function setSpeed(s) {
   APP.speedWanted = s;
   const eff = APP.saver ? Math.min(2, s) : s;
   WS.speed = eff;
-  for (const b of $("speeds").children) b.setAttribute("aria-pressed", String(+b.dataset.speed === eff));
+  $("speedSlider").value = String(eff); $("speedValue").textContent = `${eff}x`;
   WS.applySound();
 }
-for (const b of $("speeds").children) b.onclick = () => setSpeed(+b.dataset.speed);
+$("speedSlider").oninput = (e) => setSpeed(+e.target.value);
 $("pauseBtn").onclick = () => {
   WS.paused = !WS.paused; if (WS.paused) WS.releaseAll(); else WS.keepAwake(true);
   $("pauseBtn").textContent = WS.paused ? "Play" : "Pause";
@@ -414,7 +412,7 @@ $("rewindBtn").onclick = () => {
 };
 $("soundBtn").onclick = () => {
   WS.soundWanted = !WS.soundWanted; setSwitch("soundBtn", WS.soundWanted);
-  if (WS.soundWanted && WS.speed !== 1) setSpeed(1); else WS.applySound();
+  if (WS.soundWanted && WS.speed > 2) setSpeed(2); else WS.applySound();
 };
 $("saverBtn").onclick = () => { APP.saver = !APP.saver; setSwitch("saverBtn", APP.saver); setSpeed(APP.speedWanted); };
 $("botBtn").onclick = () => {

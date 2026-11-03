@@ -62,7 +62,8 @@ const WS = (() => {
   }
   ws.soundWanted = false;
   ws.applySound = () => {
-    const on = ws.soundWanted && ws.speed === 1 && !ws.paused;
+    // Sound up to 2x (Casim asked to try it sped up); above that it cannot keep up at all.
+    const on = ws.soundWanted && ws.speed <= 2 && !ws.paused;
     for (const c of audioContexts) {
       try { if (on) c.resume(); else c.suspend(); } catch (e) { /* ignore */ }
     }

@@ -2258,7 +2258,15 @@ class FEBot {
           // A teammate down to his last few HP who this enemy can reach (Seth at 1 HP, cornered by two
           // Rangers): killing it is the only way he lives, so it outranks this unit's own caution.
           const rescue = blues.concat(wards).some((a) => a !== u && (a.hp * 5 <= a.maxHP || wards.includes(a)) && threat.find((th) => th.e === e)?.tiles.has(key(a.x, a.y))) ? 200 * res.pKill + 2 * res.expDealt : 0; // and anyone threatening a ward
-          const score = 120 * res.pKill + 2.5 * res.expDealt + chip + guard + siege + staffer + rescue - (greenRace ? 250 : 0) - leavesGuard - outsideWall - standAway - (lord && wards.length ? Math.max(0, Math.abs(tile.x - tA.x) + Math.abs(tile.y - tA.y) - 3) * 15 : 0) - (lord ? 600 : endgame ? 80 : 200) * care * res.pDie - 1.2 * res.expTaken // greenRace: no detours while racing to a green recruit; leavesGuard: guards beside a ward stay put
+          // Early on Seth softens enemies and leaves the kill (and its experience) to the others, Eirika
+          // above all (Casim: in the Prologue Seth took the easy kills and Eirika stayed weak). The lord
+          // takes a kill she can make without real risk.
+          const jagen = u.charId === 0x02 && this.chapter() < 9;
+          const jagenKill = jagen && !rescue ? 230 * res.pKill : 0; // outweighs the kill itself, so a chip hit wins
+          // (Under 15% risk, Casim's call: a lord who never risks a counterattack never levels, and a
+          // death is only a rewind.)
+          const lordFeed = lord && res.pDie < 0.15 && this.chapter() < 15 ? 90 * res.pKill : 0;
+          const score = 120 * res.pKill + 2.5 * res.expDealt + chip + guard + siege + staffer + rescue - (greenRace ? 250 : 0) - leavesGuard - outsideWall - standAway - jagenKill + lordFeed - (lord && wards.length ? Math.max(0, Math.abs(tile.x - tA.x) + Math.abs(tile.y - tA.y) - 3) * 15 : 0) - (lord ? (res.pDie < 0.15 ? 200 : 600) : endgame ? 80 : 200) * care * res.pDie - 1.2 * res.expTaken // greenRace: no detours while racing to a green recruit; leavesGuard: guards beside a ward stay put
             - penalty(dg, hpAfter) + progress * 0.3 + 5 + jitter() - blockPen
             // A unit left below 60% by the counter, on a square where the enemy phase can finish it, does
             // not make that attack (Gerik kept attacking a Hero from the north-west doorway of Last Hope).
