@@ -1976,8 +1976,12 @@ class FEBot {
           // The lord counts every one of them too (four Brigands can surround her).
           const allHits = weakU || this.caution || this.g.lordIds.includes(u.charId);
           // On a Survive map enemies swarm, so everyone counts four attackers, not three (Gerik died at 30 HP to five in Last Hope).
-          for (const h of hits.slice(0, allHits || surviveMap ? Math.min(4, hits.length) : 3)) { exp += h.exp; max += h.max; }
-          return { exp, max };
+          // pAll: the chance every counted attack lands its worst case (each hit's chance is exp/max), the
+          // rough chance the worst case happens at all; a lord can take a square that is deadly only if
+          // everything goes wrong.
+          let pAll = 1;
+          for (const h of hits.slice(0, allHits || surviveMap ? Math.min(4, hits.length) : 3)) { exp += h.exp; max += h.max; pAll *= h.max > 0 ? Math.min(1, h.exp / h.max) : 1; }
+          return { exp, max, pAll };
         };
         // Grow bolder the longer a chapter drags on, so passive enemies cannot stall a run.
         // ...but never right after a rewind, and fragile units (healers, mages) stay careful.
@@ -1997,6 +2001,9 @@ class FEBot {
           // Frail units (L'Arachel, 19 HP) keep a margin: a square where the worst case takes 75% of their HP
           // counts as deadly, since a reinforcement or one more attacker than counted finishes them.
           if (fragile && dg.max < hp && dg.max >= hp * 0.75) pen += 120 * care;
+          // Early chapters: a lord accepts a square where dying needs every enemy hit to land and that is
+          // under 15% (Casim: Eirika should fight the Prologue's first Fighters; a death is only a rewind).
+          if (dg.max >= hp && lord && this.chapter() < 15 && dg.pAll !== undefined && dg.pAll < 0.15) { pen += 40 + 200 * dg.pAll; return pen; }
           if (dg.max >= hp) pen += (stale && !lord && (!fragile || staleFrailToo)) || (greenRace && !lord) ? 30 : (lordCareful ? 400 : 150 * care) + (lordCareful ? 300 : 150) * care * Math.min(1, dg.exp / Math.max(1, hp)); // a square where it can die costs a lot (every death is a rewind)
           return pen;
         };
@@ -2237,14 +2244,19 @@ class FEBot {
         }
         // Option: attack each enemy in range from here
         // While camping, only fight from squares in or at the edge of the camp.
-        const outOfCamp = camping && Math.abs(tile.x - campAt.x) + Math.abs(tile.y - campAt.y) > campR + 1;
+        // (An early lord may step out of the camp to fight: the camp kept Eirika behind the wall while the
+        // Prologue's Fighters came to Seth, and she never got their experience.)
+        const outOfCamp = camping && !(lord && this.chapter() < 15 && !this.wallCamp) && Math.abs(tile.x - campAt.x) + Math.abs(tile.y - campAt.y) > campR + 1;
         if (uw && !outOfCamp) for (const e of enemies) for (const w of this.weaponsOf(u)) {
           // Try every weapon: a Longbow from 3 squares can hit a mage who cannot hit back.
           if (holdEnd && ((goal === 1 && enemies.length === 1) || (goal === 3 && (this.r32(e.charPtr + 0x28) & 0x8000)))) continue;
           const res = this.combat(u, w, tile, e, this.weaponOf(e), { x: e.x, y: e.y }, m);
           if (!res) continue;
-          if (lord && res.pKill < 0.5 && res.pDie > 0.03) continue; // the lord never gambles on a poor attack
-          if (weakU && res.pKill < 0.3 && res.pDie > 0.05) continue; // nor do weak units (Amelia poking a Warrior)
+          // Early on Seth does not take a likely kill at all (unless a teammate is about to die to that
+          // enemy): a penalty was not enough, he still doubled and killed the Prologue's first Fighter.
+          if (u.charId === 0x02 && this.chapter() < 9 && res.pKill >= 0.5 && !blues.some((a) => a !== u && a.hp * 5 <= a.maxHP * 2 && threat.find((th) => th.e === e)?.tiles.has(key(a.x, a.y)))) continue;
+          if (lord && res.pKill < 0.5 && res.pDie > (this.chapter() < 15 ? 0.15 : 0.03)) continue; // the lord never gambles on a poor attack (early on, up to 15% risk: Casim)
+          if (weakU && !(lord && this.chapter() < 15 && res.pDie < 0.15) && res.pKill < 0.3 && res.pDie > 0.05) continue; // nor do weak units (Amelia poking a Warrior); an early lord follows the 15% rule
           const dg = danger(res.pKill > 0.6 ? e : null);
           const hpAfter = Math.max(1, u.hp - res.expTaken);
           // In the endgame every point of damage on the last enemies is progress (several units can finish a boss).
@@ -2265,7 +2277,9 @@ class FEBot {
           const jagenKill = jagen && !rescue ? 230 * res.pKill : 0; // outweighs the kill itself, so a chip hit wins
           // (Under 15% risk, Casim's call: a lord who never risks a counterattack never levels, and a
           // death is only a rewind.)
-          const lordFeed = lord && res.pDie < 0.15 && this.chapter() < 15 ? 90 * res.pKill : 0;
+          // ...and fights at all when it is that safe, kill or not: the experience is the point
+          // (Eirika should take the Prologue's first Fighters herself).
+          const lordFeed = lord && res.pDie < 0.15 && this.chapter() < 15 ? 90 * res.pKill + 80 : 0;
           const score = 120 * res.pKill + 2.5 * res.expDealt + chip + guard + siege + staffer + rescue - (greenRace ? 250 : 0) - leavesGuard - outsideWall - standAway - jagenKill + lordFeed - (lord && wards.length ? Math.max(0, Math.abs(tile.x - tA.x) + Math.abs(tile.y - tA.y) - 3) * 15 : 0) - (lord ? (res.pDie < 0.15 ? 200 : 600) : endgame ? 80 : 200) * care * res.pDie - 1.2 * res.expTaken // greenRace: no detours while racing to a green recruit; leavesGuard: guards beside a ward stay put
             - penalty(dg, hpAfter) + progress * 0.3 + 5 + jitter() - blockPen
             // A unit left below 60% by the counter, on a square where the enemy phase can finish it, does

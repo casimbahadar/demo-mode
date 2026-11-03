@@ -281,6 +281,11 @@ function placeLabel(bot) {
   if (!bot || !WS.memReady()) return "";
   const ch = bot.chapter(), t = bot.turn();
   if (ch === 0x38 || t === 0) return "";
+  // Only on a battle map: on the title or save screens the chapter and turn in memory are left over from
+  // whatever ran before (a new game was labelled "Escape!, turn 3").
+  let onMap = false;
+  try { onMap = bot.scene().ps.some((p) => /MAPTASK|E_BMAPMAIN|E_PLAYERPHASE|E_CPPHASE/.test(p.name || "")); } catch (e) { /* not ready */ }
+  if (!onMap) return "";
   return `${(APP.bot && APP.bot.chapterTitle(ch)) || (ch > 0x38 ? "Skirmish" : "Chapter " + ch)}, turn ${t}`; // index 61 is Creeping Darkness, not a skirmish
 }
 
@@ -341,6 +346,7 @@ $("romFile").onchange = async (e) => {
 async function startWatch(id, resume) {
   if (WS.started) { sessionStorage.setItem("ws-start", JSON.stringify({ id, resume })); location.reload(); return; }
   APP.romId = id;
+  localStorage.setItem("ws-active", JSON.stringify({ id, t: Date.now() }));
   const rec = await WS.store.get("roms", id), meta = await WS.store.get("runs", "meta:" + id);
   meta.used = Date.now(); await WS.store.put("runs", meta);
   $("library").hidden = true; $("watch").hidden = false;
@@ -376,12 +382,13 @@ async function startWatch(id, resume) {
 
 function snapshot() {
   if (!WS.started) return;
-  APP.rewind.push(WS.saveState()); if (APP.rewind.length > 30) APP.rewind.shift();
+  APP.rewind.push(WS.saveState()); if (APP.rewind.length > 10) APP.rewind.shift(); // each save is ~430 KB: 30 of them helped iOS decide to reload the page
   $("rewindBtn").disabled = APP.rewind.length < 2;
 }
 async function saveRun() {
   if (!WS.started || !APP.romId) return;
   await WS.store.put("runs", { id: "run:" + APP.romId, state: WS.saveState(), place: placeLabel(APP.bot), saved: Date.now() });
+  localStorage.setItem("ws-active", JSON.stringify({ id: APP.romId, t: Date.now() }));
 }
 // Save the run now and then, and whenever Safari hides the page.
 setInterval(() => { if (WS.started && !WS.paused) saveRun(); }, 60000);
@@ -420,7 +427,7 @@ $("botBtn").onclick = () => {
   APP.bot.enabled = !APP.bot.enabled; WS.releaseAll(); if (APP.bot.enabled) APP.bot.reset();
   setSwitch("botBtn", APP.bot.enabled);
 };
-$("backBtn").onclick = async () => { await saveRun(); WS.keepAwake(false); location.reload(); };
+$("backBtn").onclick = async () => { await saveRun(); localStorage.removeItem("ws-active"); WS.keepAwake(false); location.reload(); };
 
 // ---- Recorder: Casim plays a chapter the bot cannot beat; every move he makes is written down, with a
 // save and a picture of the screen at the start of each of his turns, so his way of playing can be
@@ -802,6 +809,14 @@ WS.onTick = () => {
   await renderLibrary();
   const pending = sessionStorage.getItem("ws-start");
   if (pending) { sessionStorage.removeItem("ws-start"); const p = JSON.parse(pending); startWatch(p.id, p.resume); }
+  else {
+    // iOS sometimes reloads the page by itself (it frees the memory of a heavy page): if a run was being
+    // watched in the last 15 minutes and was not left with Back, carry on with it instead of showing the list.
+    try {
+      const a = JSON.parse(localStorage.getItem("ws-active") || "null");
+      if (a && Date.now() - a.t < 15 * 60 * 1000) { toast("Picking up where the bot left off"); startWatch(a.id, true); }
+    } catch (e) { /* ignore */ }
+  }
 })();
 </script>
 
