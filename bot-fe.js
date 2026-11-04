@@ -909,13 +909,14 @@ class FEBot {
         if (a) this.say(`(after the trade ${this.uname(a)} holds ${a.items.map((i) => this.text(this.r16(this.g.itemData + i.id * this.g.itemSize))).join(", ") || "nothing"}${t ? `; ${this.uname(t)} holds ${t.items.map((i) => this.text(this.r16(this.g.itemData + i.id * this.g.itemSize))).join(", ") || "nothing"}` : ""})`);
         yield* this.press("B", 2, 20); return;
       }
-      yield* go(this, 1, it.partnerSlot);
+      // Giving (Seth hands Eirika his Vulnerary): pick our own item first; taking: pick the partner's.
+      if (it.give) yield* go(this, 0, it.giveSlot); else yield* go(this, 1, it.partnerSlot);
       yield* this.press("A", 2, 12);
       it.picked = true;
       return;
     }
-    // Holding the partner's weapon: put it on our first empty row.
-    yield* go(this, 0, Math.min(4, it.unitItems));
+    // Holding the item: put it on the other side's first empty row.
+    if (it.give) yield* go(this, 1, Math.min(4, it.partnerEmpty)); else yield* go(this, 0, Math.min(4, it.unitItems));
     yield* this.press("A", 2, 16);
   }
 
@@ -1539,7 +1540,7 @@ class FEBot {
           tiles.add(key(ex + dx, ey + dy));
         }
       }
-      return { e, w, ws: ws.length ? ws : [w], tiles };
+      return { e, w, ws: ws.length ? ws : [w], tiles, reach: r };
     });
 
     // Long-range casters (Purge, Bolting...): the squares they can hit next turn, roughly.
@@ -1967,9 +1968,28 @@ class FEBot {
             // (Seth at 6 HP in Two Faces of Evil). Counted as a sure hit worth half its HP.
             if ((th.ws || []).some((ew) => this.isStone(ew.id))) hits.push({ exp: u.hp * 0.5, max: u.hp * 2 < u.maxHP ? u.hp : u.hp * 0.5 });
             if (!worst) continue;
+            worst.melee = (th.ws || []).every((w) => (w.max || 1) <= 1);
             hits.push(worst);
           }
           hits.sort((a, b) => b.exp - a.exp);
+          // Only as many close-range attackers as there are open squares next to this one: in a gap
+          // between mountains only one Fighter can reach Eirika at a time (Casim's Prologue tactic).
+          {
+            let open = 0;
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+              const x = tile.x + dx, y = tile.y + dy;
+              if (x < 0 || y < 0 || x >= m.w || y >= m.h || this.s8(this.costTable(u) + m.t[y][x]) < 0) continue;
+              if (blues.some((b) => b !== u && b.x === x && b.y === y)) continue;
+              // ...that an enemy can actually get to without going through this square first (the square
+              // behind Eirika in a corridor does not count).
+              const nk = key(x, y);
+              const reachable = threat.some((th) => th.reach && th.reach.has(nk) && !(th.reach.has(t) && th.reach.get(nk) > th.reach.get(t)));
+              if (!reachable) continue;
+              open++;
+            }
+            let meleeLeft = open;
+            for (let h = 0; h < hits.length; h++) if (hits[h].melee) { if (meleeLeft > 0) meleeLeft--; else { hits.splice(h, 1); h--; } }
+          }
           let exp = 0, max = 0;
           // After a rewind, assume more of them can reach (the last estimate was too hopeful).
           // Weak units (and everyone after a rewind) assume every enemy that can reach will come.
@@ -1979,9 +1999,20 @@ class FEBot {
           // pAll: the chance every counted attack lands its worst case (each hit's chance is exp/max), the
           // rough chance the worst case happens at all; a lord can take a square that is deadly only if
           // everything goes wrong.
-          let pAll = 1;
-          for (const h of hits.slice(0, allHits || surviveMap ? Math.min(4, hits.length) : 3)) { exp += h.exp; max += h.max; pAll *= h.max > 0 ? Math.min(1, h.exp / h.max) : 1; }
-          return { exp, max, pAll };
+          const counted = hits.slice(0, allHits || surviveMap ? Math.min(4, hits.length) : 3);
+          for (const h of counted) { exp += h.exp; max += h.max; }
+          // pDeath(hp): the chance enough of the counted attacks land to do hp damage, each landing its worst
+          // case with chance exp/max (a hurt Eirika dies to any one 40% hit: 40%, not 0.4 x 0.4 x 0.4).
+          const pDeath = (hp) => {
+            let p = 0;
+            for (let mask = 1; mask < (1 << counted.length); mask++) {
+              let dmg = 0, pr = 1;
+              counted.forEach((h, i) => { const ph = h.max > 0 ? Math.min(1, h.exp / h.max) : 0; if (mask & (1 << i)) { dmg += h.max; pr *= ph; } else pr *= 1 - ph; });
+              if (dmg >= hp) p += pr;
+            }
+            return p;
+          };
+          return { exp, max, pDeath };
         };
         // Grow bolder the longer a chapter drags on, so passive enemies cannot stall a run.
         // ...but never right after a rewind, and fragile units (healers, mages) stay careful.
@@ -2003,7 +2034,7 @@ class FEBot {
           if (fragile && dg.max < hp && dg.max >= hp * 0.75) pen += 120 * care;
           // Early chapters: a lord accepts a square where dying needs every enemy hit to land and that is
           // under 15% (Casim: Eirika should fight the Prologue's first Fighters; a death is only a rewind).
-          if (dg.max >= hp && lord && this.chapter() < 15 && dg.pAll !== undefined && dg.pAll < 0.15) { pen += 40 + 200 * dg.pAll; return pen; }
+          if (dg.max >= hp && lord && this.chapter() < 15 && dg.pDeath) { const pd = dg.pDeath(hp); if (pd < 0.15) { pen += 40 + 300 * pd; return pen; } }
           if (dg.max >= hp) pen += (stale && !lord && (!fragile || staleFrailToo)) || (greenRace && !lord) ? 30 : (lordCareful ? 400 : 150 * care) + (lordCareful ? 300 : 150) * care * Math.min(1, dg.exp / Math.max(1, hp)); // a square where it can die costs a lot (every death is a rewind)
           return pen;
         };
@@ -2169,6 +2200,7 @@ class FEBot {
         // neighbour (trading does not use up the turn) and drinks it at once. The lord first.
         if (u.hp * 2 < u.maxHP && !vul && roomFor) for (const a of blues) {
           if (a === u || !adj(a)) continue;
+          if (!lord && this.g.lordIds.includes(a.charId) && !(u.hp * 4 < u.maxHP)) continue; // the lord's potions stay with the lord (Seth took back the Vulnerary he had just given Eirika)
           const potion = a.items.find((i) => i.id === this.g.vulnerary || i.id === 0x6D);
           if (!potion) continue;
           consider({ score: (lord ? 1200 : 300) + (u.maxHP - u.hp) * 3 - penalty(danger(null), u.hp + 15), unit: u, dest: tile, kind: "trade", target: a,
@@ -2284,7 +2316,9 @@ class FEBot {
           // death is only a rewind.)
           // ...and fights at all when it is that safe, kill or not: the experience is the point
           // (Eirika should take the Prologue's first Fighters herself).
-          const lordFeed = lord && res.pDie < 0.15 && this.chapter() < 15 ? 90 * res.pKill + 80 : 0;
+          // (The +80 for the experience only where the worst case afterwards does not kill her: otherwise she
+          // attacked from the square both Prologue Fighters could reach, instead of holding the gap.)
+          const lordFeed = lord && res.pDie < 0.15 && this.chapter() < 15 ? 90 * res.pKill + (dg.max < hpAfter ? 80 : 0) : 0;
           const score = 120 * res.pKill + 2.5 * res.expDealt + chip + guard + siege + staffer + rescue - (greenRace ? 250 : 0) - leavesGuard - outsideWall - standAway - jagenKill + lordFeed + perch - (lord && wards.length ? Math.max(0, Math.abs(tile.x - tA.x) + Math.abs(tile.y - tA.y) - 3) * 15 : 0) - (lord ? (res.pDie < 0.15 ? 200 : 600) : endgame ? 80 : 200) * care * res.pDie - 1.2 * res.expTaken // greenRace: no detours while racing to a green recruit; leavesGuard: guards beside a ward stay put
             - penalty(dg, hpAfter) + progress * 0.3 + 5 + jitter() - blockPen
             // A unit left below 60% by the counter, on a square where the enemy phase can finish it, does
@@ -2311,6 +2345,17 @@ class FEBot {
               text: `${this.uname(u)} dances for ${this.uname(a)}` });
           }
         }
+        // Option (Seth, early on): hand his Vulnerary to a neighbouring lord who has no healing item
+        // (Casim: at the start of the Prologue; Seth does not need it despite starting hurt).
+        if (u.charId === 0x02 && this.chapter() < 3) {
+          const vul2 = u.items.find((i) => i.id === this.g.vulnerary || i.id === 0x6D);
+          for (const a of blues) {
+            if (!vul2 || !this.g.lordIds.includes(a.charId) || a.items.length >= 5 || Math.abs(a.x - tile.x) + Math.abs(a.y - tile.y) !== 1) continue;
+            if (a.items.filter((i) => i.id === this.g.vulnerary || i.id === 0x6D).length >= 2) continue; // she starts with one of her own
+            consider({ score: 520 - penalty(danger(null), u.hp), unit: u, dest: tile, kind: "trade", target: a, give: true,
+              giveSlot: vul2.slot, partnerEmpty: a.items.length, text: `${this.uname(u)} gives ${this.uname(a)} his Vulnerary` });
+          }
+        }
         // Option: use a stat booster it carries (Swiftsole, Energy Ring, Dracoshield...): Casim wants
         // them used rather than carried around. Done from a safe square, early in the turn.
         const booster = u.items.find((i) => this.isBooster(i.id));
@@ -2320,8 +2365,8 @@ class FEBot {
           if (!best || score > best.score) best = { score, unit: u, dest: tile, kind: "heal", slot: booster.slot,
             text: `${this.uname(u)} uses ${this.aOrAn(this.text(this.r16(this.g.itemData + booster.id * this.g.itemSize)))}` };
         }
-        // Option: heal with a Vulnerary when hurt
-        if (vul && u.hp * 2 <= u.maxHP) {
+        // Option: heal with a Vulnerary when hurt (early on Seth keeps his for Eirika unless badly hurt)
+        if (vul && u.hp * 2 <= u.maxHP && !(u.charId === 0x02 && this.chapter() < 3 && u.hp * 5 > u.maxHP * 2)) {
           const dg = danger(null);
           const score = 40 + (u.maxHP - u.hp) * 3 - penalty(dg, Math.min(u.maxHP, u.hp + 10)) + progress * 0.2 - blockPen;
           if (!best || score > best.score) best = { score, unit: u, dest: tile, kind: "heal", slot: vul.slot, text: `${this.uname(u)} uses ${vul.id === 0x6D ? "an Elixir" : "a Vulnerary"}` };

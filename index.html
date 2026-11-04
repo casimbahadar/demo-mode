@@ -91,6 +91,17 @@ button:focus-visible { outline: 3px solid var(--led); outline-offset: 2px; }
 .what { margin-top: 4px; font-size: 17px; font-weight: 600; }
 .speed { display: flex; align-items: center; gap: 12px; }
 .speed-name { font-weight: 650; color: var(--ink-2); min-width: 52px; }
+.pad { display: grid; gap: 12px; margin-bottom: 16px; user-select: none; -webkit-user-select: none; touch-action: none; }
+.pad button { background: var(--panel, #22262c); color: var(--ink, #ece8df); border: 1px solid rgba(255,255,255,.12); border-radius: 12px; font: 700 18px/1 var(--pixel, monospace); min-height: 52px; -webkit-tap-highlight-color: transparent; }
+.pad button.down { background: #ece8df; color: #16181c; }
+.pad-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.pad-shoulders button, .pad-small button { flex: 1; }
+.pad-small button { min-height: 40px; font-size: 14px; }
+.dpad { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 56px); }
+.dpad .d-up { grid-area: 1 / 2; } .dpad .d-left { grid-area: 2 / 1; } .dpad .d-right { grid-area: 2 / 3; } .dpad .d-down { grid-area: 3 / 2; }
+.ab { display: flex; gap: 14px; align-items: center; }
+.ab button { width: 68px; height: 68px; border-radius: 50%; font-size: 22px; }
+.ab .a-btn { transform: translateY(-14px); }
 #speedSlider { flex: 1; accent-color: var(--key); min-height: var(--btn-h); }
 #speedValue { min-width: 44px; text-align: right; font: 700 16px/1 var(--pixel); }
 .seg { display: flex; flex: 1; border: 1px solid var(--seam); border-radius: var(--r-2); overflow: hidden; }
@@ -171,6 +182,20 @@ dialog::backdrop { background: rgba(8, 9, 10, 0.72); }
     </div>
   </div>
   <div class="deck">
+    <!-- Touch controls, shown only while the bot is off (playing yourself, or recording your play) -->
+    <div id="pad" class="pad" hidden>
+      <div class="pad-row pad-shoulders"><button type="button" data-key="L">L</button><button type="button" data-key="R">R</button></div>
+      <div class="pad-row">
+        <div class="dpad">
+          <button type="button" data-key="UP" class="d-up" aria-label="Up">▲</button>
+          <button type="button" data-key="LEFT" class="d-left" aria-label="Left">◀</button>
+          <button type="button" data-key="RIGHT" class="d-right" aria-label="Right">▶</button>
+          <button type="button" data-key="DOWN" class="d-down" aria-label="Down">▼</button>
+        </div>
+        <div class="ab"><button type="button" data-key="B" class="b-btn">B</button><button type="button" data-key="A" class="a-btn">A</button></div>
+      </div>
+      <div class="pad-row pad-small"><button type="button" data-key="SELECT">Select</button><button type="button" data-key="START">Start</button></div>
+    </div>
     <div class="status" role="status" aria-live="polite" hidden>
       <div class="status-top"><p class="where" id="statusWhere">Loading</p><p class="mode" id="statusMode">Demo</p></div>
       <p class="what" id="statusWhat">Starting</p>
@@ -426,7 +451,18 @@ $("botBtn").onclick = () => {
   if (!APP.bot) return;
   APP.bot.enabled = !APP.bot.enabled; WS.releaseAll(); if (APP.bot.enabled) APP.bot.reset();
   setSwitch("botBtn", APP.bot.enabled);
+  showPad();
 };
+// Touch controls: shown whenever the bot is off. Each button holds its key while the finger is on it.
+function showPad() { $("pad").hidden = !APP.bot || APP.bot.enabled; }
+for (const b of $("pad").querySelectorAll("button[data-key]")) {
+  const k = b.dataset.key;
+  const press = (e) => { e.preventDefault(); b.classList.add("down"); WS.setKey(k, true); };
+  const release = (e) => { e.preventDefault(); b.classList.remove("down"); WS.setKey(k, false); };
+  b.addEventListener("pointerdown", press); b.addEventListener("pointerup", release);
+  b.addEventListener("pointercancel", release); b.addEventListener("pointerleave", release);
+}
+setInterval(showPad, 1000); // the bot can also be switched off elsewhere (recording, a pause)
 $("backBtn").onclick = async () => { await saveRun(); localStorage.removeItem("ws-active"); WS.keepAwake(false); location.reload(); };
 
 // ---- Recorder: Casim plays a chapter the bot cannot beat; every move he makes is written down, with a
@@ -763,6 +799,11 @@ function turnWatch(bot) {
   APP.stretch.landed = snap.turn;
   bot.noteFailure(hit, t); // do not repeat the move that just failed
   WS.loadState(snap.state);
+  // New luck for the retry. The game's random numbers (three 16-bit seeds at 0x03000000) only move when
+  // something is rolled, so a rewind brought back the very same rolls and the same moves lost the same
+  // way every time (Casim noticed the identical hits). Reseed them so each retry rolls fresh.
+  for (let i = 0; i < 6; i++) WS.w8(0x03000000 + i, (Math.random() * 256) | 0);
+  if (!WS.r8(0x03000000) && !WS.r8(0x03000001)) WS.w8(0x03000000, 1); // never all zero
   APP.accepted = new Set(); // units who fell after this snapshot are alive again
   bot.reset(); bot.caution = Math.min(4, bot.caution + 1);
   const msg = `${name} fell. Back to the start of turn ${snap.turn} to try again.`;
