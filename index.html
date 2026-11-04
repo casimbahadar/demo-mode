@@ -230,6 +230,7 @@ dialog::backdrop { background: rgba(8, 9, 10, 0.72); }
       <span class="switch-text"><b>Record my play</b><small>For a chapter the bot cannot beat: turns the bot off</small></span><span class="state">Off</span>
     </button>
     <button id="recExport" class="btn" type="button" hidden>Save the recording</button>
+    <button id="stateExport" class="btn" type="button">Save this game to a file</button>
     <button id="logBtn" class="btn" type="button">Copy bot log</button>
     <button id="backBtn" class="btn flat" type="button">Save and go back to your ROMs</button>
   </div>
@@ -340,6 +341,20 @@ async function renderLibrary() {
     const tools = el.querySelector(".cart-tools");
     const tool = (label, cls, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "btn " + cls; b.textContent = label; b.onclick = fn; tools.appendChild(b); };
     if (run) tool("Start over", "", () => startWatch(id, false));
+    // Load a saved game from a file (a save sent by Claude from the test run, or one saved with "Save to a
+    // file"), replacing this ROM's saved run. Continue then starts from exactly that moment.
+    tool("Load a save", "", () => {
+      const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".state,application/octet-stream";
+      inp.onchange = async () => {
+        const f = inp.files && inp.files[0]; if (!f) return;
+        if (run && !confirm(`Replace the saved run for ${m.name} with ${f.name}?`)) return;
+        const state = new Uint8Array(await f.arrayBuffer());
+        await WS.store.put("runs", { id: "run:" + id, state, place: "a loaded save (" + f.name.replace(/\.state$/i, "") + ")", saved: Date.now() });
+        toast("Save loaded: tap Continue to play from it");
+        renderLibrary();
+      };
+      inp.click();
+    });
     tool("Remove", "remove", async () => {
       if (!confirm(`Remove ${m.name} from this phone? Its saved run goes too.`)) return;
       await WS.store.del("roms", id); await WS.store.del("runs", "meta:" + id); await WS.store.del("runs", "run:" + id);
@@ -402,12 +417,14 @@ async function startWatch(id, resume) {
     }
   }
   $("loadingNote").hidden = true;
+  // Settings that should survive a reload (iOS reloads the page by itself now and then).
+  try { const s = JSON.parse(localStorage.getItem("ws-settings") || "{}"); if (s.saver) { APP.saver = true; setSwitch("saverBtn", true); } if (s.speed) APP.speedWanted = s.speed; } catch (e) { /* ignore */ }
   setSpeed(APP.speedWanted);
 }
 
 function snapshot() {
   if (!WS.started) return;
-  APP.rewind.push(WS.saveState()); if (APP.rewind.length > 10) APP.rewind.shift(); // each save is ~430 KB: 30 of them helped iOS decide to reload the page
+  APP.rewind.push(WS.saveState()); if (APP.rewind.length > 6) APP.rewind.shift(); // each save is ~430 KB: 30 of them helped iOS decide to reload the page
   $("rewindBtn").disabled = APP.rewind.length < 2;
 }
 async function saveRun() {
@@ -429,7 +446,7 @@ function setSpeed(s) {
   $("speedSlider").value = String(eff); $("speedValue").textContent = `${eff}x`;
   WS.applySound();
 }
-$("speedSlider").oninput = (e) => setSpeed(+e.target.value);
+$("speedSlider").oninput = (e) => { setSpeed(+e.target.value); saveSettings(); };
 $("pauseBtn").onclick = () => {
   WS.paused = !WS.paused; if (WS.paused) WS.releaseAll(); else WS.keepAwake(true);
   $("pauseBtn").textContent = WS.paused ? "Play" : "Pause";
@@ -446,7 +463,8 @@ $("soundBtn").onclick = () => {
   WS.soundWanted = !WS.soundWanted; setSwitch("soundBtn", WS.soundWanted);
   if (WS.soundWanted && WS.speed > 2) setSpeed(2); else WS.applySound();
 };
-$("saverBtn").onclick = () => { APP.saver = !APP.saver; setSwitch("saverBtn", APP.saver); setSpeed(APP.speedWanted); };
+function saveSettings() { try { localStorage.setItem("ws-settings", JSON.stringify({ saver: APP.saver, speed: APP.speedWanted })); } catch (e) { /* ignore */ } }
+$("saverBtn").onclick = () => { APP.saver = !APP.saver; setSwitch("saverBtn", APP.saver); setSpeed(APP.speedWanted); saveSettings(); };
 $("botBtn").onclick = () => {
   if (!APP.bot) return;
   APP.bot.enabled = !APP.bot.enabled; WS.releaseAll(); if (APP.bot.enabled) APP.bot.reset();
@@ -534,6 +552,14 @@ $("recBtn").onclick = () => {
     $("recExport").hidden = false;
     bot.say(`Recording your play in ${REC.data.title}: the bot is off until you turn it back on`);
   }
+};
+$("stateExport").onclick = () => {
+  if (!WS.started) return;
+  const blob = new Blob([WS.saveState()], { type: "application/octet-stream" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${(placeLabel(APP.bot) || "demo-mode-save").replace(/[^A-Za-z0-9]+/g, "-")}.state`;
+  document.body.appendChild(a); a.click(); a.remove();
 };
 $("recExport").onclick = () => {
   if (!REC.data) return;
@@ -715,7 +741,7 @@ function turnWatch(bot) {
     else if (APP.stretch.depth && APP.stretch.landed !== undefined && t >= APP.stretch.landed + 2) { APP.stretch.depth--; APP.stretch.landed = t; APP.stretch.fails = 0; }
     APP.battleKills = new Set();
     APP.turnSnaps.push({ key, chapter: ch, turn: t, state: WS.saveState(), dead: bot.deadBlue(), recruits: bot.pendingRecruits(), redRecruits: bot.protectedEnemyRecruits(), alive: bot.aliveBlue() });
-    if (APP.turnSnaps.length > 12) APP.turnSnaps.shift(); // room to back up several turns and try a different plan
+    if (APP.turnSnaps.length > 9) APP.turnSnaps.shift(); // room to back up several turns and try a different plan (9, not 12: memory on the phone)
     return;
   }
   const procNames = (() => { try { return bot.scene().ps.map((p) => p.name || ""); } catch (e) { return []; } })();

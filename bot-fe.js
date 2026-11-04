@@ -2283,7 +2283,12 @@ class FEBot {
         // While camping, only fight from squares in or at the edge of the camp.
         // (An early lord may step out of the camp to fight: the camp kept Eirika behind the wall while the
         // Prologue's Fighters came to Seth, and she never got their experience.)
-        const outOfCamp = camping && !(lord && this.chapter() < 15 && !this.wallCamp) && Math.abs(tile.x - campAt.x) + Math.abs(tile.y - campAt.y) > campR + 1;
+        // Attacking from just outside the camp is allowed, with a cost per square: forbidding it made Franz
+        // and Gilliam walk up, not attack, and get hit (Casim). Far outside the camp is still out (walled
+        // camps on Survive maps keep their hard rule through outsideWall).
+        const campOver = camping && !(lord && this.chapter() < 15 && !this.wallCamp) ? Math.abs(tile.x - campAt.x) + Math.abs(tile.y - campAt.y) - (campR + 1) : 0;
+        const outOfCamp = campOver > 2;
+        const campCost = campOver > 0 ? campOver * 35 : 0;
         if (uw && !outOfCamp) for (const e of enemies) for (const w of this.weaponsOf(u)) {
           // Try every weapon: a Longbow from 3 squares can hit a mage who cannot hit back.
           if (holdEnd && ((goal === 1 && enemies.length === 1) || (goal === 3 && (this.r32(e.charPtr + 0x28) & 0x8000)))) continue;
@@ -2319,7 +2324,7 @@ class FEBot {
           // (The +80 for the experience only where the worst case afterwards does not kill her: otherwise she
           // attacked from the square both Prologue Fighters could reach, instead of holding the gap.)
           const lordFeed = lord && res.pDie < 0.15 && this.chapter() < 15 ? 90 * res.pKill + (dg.max < hpAfter ? 80 : 0) : 0;
-          const score = 120 * res.pKill + 2.5 * res.expDealt + chip + guard + siege + staffer + rescue - (greenRace ? 250 : 0) - leavesGuard - outsideWall - standAway - jagenKill + lordFeed + perch - (lord && wards.length ? Math.max(0, Math.abs(tile.x - tA.x) + Math.abs(tile.y - tA.y) - 3) * 15 : 0) - (lord ? (res.pDie < 0.15 ? 200 : 600) : endgame ? 80 : 200) * care * res.pDie - 1.2 * res.expTaken // greenRace: no detours while racing to a green recruit; leavesGuard: guards beside a ward stay put
+          const score = 120 * res.pKill + 2.5 * res.expDealt + chip + guard + siege + staffer + rescue - (greenRace ? 250 : 0) - leavesGuard - outsideWall - standAway - jagenKill + lordFeed + perch - campCost - (lord && wards.length ? Math.max(0, Math.abs(tile.x - tA.x) + Math.abs(tile.y - tA.y) - 3) * 15 : 0) - (lord ? (res.pDie < 0.15 ? 200 : 600) : endgame ? 80 : 200) * care * res.pDie - 1.2 * res.expTaken // greenRace: no detours while racing to a green recruit; leavesGuard: guards beside a ward stay put
             - penalty(dg, hpAfter) + progress * 0.3 + 5 + jitter() - blockPen
             // A unit left below 60% by the counter, on a square where the enemy phase can finish it, does
             // not make that attack (Gerik kept attacking a Hero from the north-west doorway of Last Hope).
