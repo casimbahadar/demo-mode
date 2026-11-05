@@ -413,12 +413,22 @@ async function startWatch(id, resume) {
     if (run) {
       // let the core settle for a few frames, then restore the saved run
       const t0 = WS.frame; await new Promise((r) => { const iv = setInterval(() => { if (WS.frame - t0 > 20) { clearInterval(iv); r(); } }, 50); });
+      // Start paused on a saved game, so nothing moves before you have looked (Casim: at 2x the bot
+      // had ended Tethys's turn before he could turn it off).
       WS.loadState(run.state); if (APP.bot) APP.bot.reset();
+      WS.paused = true; WS.releaseAll(); $("pauseBtn").textContent = "Play"; WS.applySound();
+      toast("Paused. Tap Play when you are ready.");
     }
   }
   $("loadingNote").hidden = true;
   // Settings that should survive a reload (iOS reloads the page by itself now and then).
-  try { const s = JSON.parse(localStorage.getItem("ws-settings") || "{}"); if (s.saver) { APP.saver = true; setSwitch("saverBtn", true); } if (s.speed) APP.speedWanted = s.speed; } catch (e) { /* ignore */ }
+  try {
+    const s = JSON.parse(localStorage.getItem("ws-settings") || "{}");
+    if (s.saver) { APP.saver = true; setSwitch("saverBtn", true); }
+    if (s.speed) APP.speedWanted = s.speed;
+    if (s.botOff && APP.bot) { APP.bot.enabled = false; setSwitch("botBtn", false); } // a reload keeps the bot off if you had it off
+  } catch (e) { /* ignore */ }
+  showPad();
   setSpeed(APP.speedWanted);
 }
 
@@ -463,13 +473,13 @@ $("soundBtn").onclick = () => {
   WS.soundWanted = !WS.soundWanted; setSwitch("soundBtn", WS.soundWanted);
   if (WS.soundWanted && WS.speed > 2) setSpeed(2); else WS.applySound();
 };
-function saveSettings() { try { localStorage.setItem("ws-settings", JSON.stringify({ saver: APP.saver, speed: APP.speedWanted })); } catch (e) { /* ignore */ } }
+function saveSettings() { try { localStorage.setItem("ws-settings", JSON.stringify({ saver: APP.saver, speed: APP.speedWanted, botOff: !!(APP.bot && !APP.bot.enabled) })); } catch (e) { /* ignore */ } }
 $("saverBtn").onclick = () => { APP.saver = !APP.saver; setSwitch("saverBtn", APP.saver); setSpeed(APP.speedWanted); saveSettings(); };
 $("botBtn").onclick = () => {
   if (!APP.bot) return;
   APP.bot.enabled = !APP.bot.enabled; WS.releaseAll(); if (APP.bot.enabled) APP.bot.reset();
   setSwitch("botBtn", APP.bot.enabled);
-  showPad();
+  showPad(); saveSettings();
 };
 // Touch controls: shown whenever the bot is off. Each button holds its key while the finger is on it.
 function showPad() { $("pad").hidden = !APP.bot || APP.bot.enabled; }
@@ -546,7 +556,7 @@ $("recBtn").onclick = () => {
   REC.on = !REC.on;
   setSwitch("recBtn", REC.on);
   if (REC.on) {
-    bot.enabled = false; WS.releaseAll(); setSwitch("botBtn", false);
+    bot.enabled = false; WS.releaseAll(); setSwitch("botBtn", false); saveSettings();
     REC.data = { version: 1, made: new Date().toISOString(), chapter: bot.chapter(), title: bot.chapterTitle(bot.chapter()), turns: [], actions: [] };
     REC.lastTurn = -1; REC.phaseUnits = null; REC.battle = null; REC.lastBattle = (() => { const i = bot.battleIds(); return i.join(",") + ":" + bot.r8(0x0203A4EC + 0x13) + ":" + bot.r8(0x0203A56C + 0x13); })();
     $("recExport").hidden = false;
